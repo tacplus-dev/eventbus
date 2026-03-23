@@ -1,0 +1,14 @@
+language: java-maven
+pkg: com.gitlab.secondstarcavalier.controlplane.services.eventbus
+output-dir: tacplus
+states:
+  - services/eventbus.EventbusState:rw
+grpc-servers:
+  - services/eventbus.EventBusService
+grpc-s2s-clients:
+  - services/kernel.KernelMintService
+post-gen:
+  - cmd: mvn
+    args: [-pl, tacplus, package]
+container:
+  image: registry.gitlab.com/secondstarcavalier/controlplane/services/eventbus/eventbus
