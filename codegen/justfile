@@ -1,6 +1,6 @@
 # Build eventbus codegen maven plugin.
 
-tacplus_image := "registry.gitlab.com/secondstarcavalier/controlplane/services/tacplus/tacplus-1-1:latest"
+tacplus_image := "registry.gitlab.com/secondstarcavalier/controlplane/utils/tacplus/tacplus-1-1:latest"
 
 default: build
 
