@@ -4,3 +4,16 @@ tacplus/
 *.jar
 dependency-reduced-pom.xml
 eventbus
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Windows
+Thumbs.db
