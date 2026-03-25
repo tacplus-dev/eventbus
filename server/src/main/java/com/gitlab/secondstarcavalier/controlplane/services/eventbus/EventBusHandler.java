@@ -100,10 +100,8 @@ public class EventBusHandler implements Handler {
 		int controllerPort = config.getControllerPort();
 		int nodeId = config.getNodeId();
 		String clusterSeed = config.getClusterSeed();
-		String hostname = System.getenv("HOSTNAME");
-		if (hostname == null || hostname.isEmpty()) {
-			hostname = "localhost";
-		}
+		String envHost = System.getenv("HOSTNAME");
+		String hostname = (envHost != null && !envHost.isEmpty()) ? envHost : "localhost";
 
 		KafkaEmbeddedBroker.Role role = switch (nodeRole) {
 			case KAFKA_ROLE_BROKER -> KafkaEmbeddedBroker.Role.BROKER;
@@ -120,8 +118,8 @@ public class EventBusHandler implements Handler {
 
 		// Inter-node mTLS
 		ManagedChannel kernelChan = sm.conn();
-		KafkaEmbeddedBroker.TlsConfig tls = obtainInterNodeTls(kernelChan);
-		logger.info("Inter-node mTLS enabled with {} DNS SAN", SERVICE_NAME);
+		KafkaEmbeddedBroker.TlsConfig tls = obtainInterNodeTls(kernelChan, hostname);
+		logger.info("Inter-node mTLS enabled with {} DNS SAN (hostname={})", SERVICE_NAME, hostname);
 
 		// Peer discovery
 		List<KafkaEmbeddedBroker.Peer> voters = discoverVotersFromState(
@@ -141,7 +139,7 @@ public class EventBusHandler implements Handler {
 		// TLS cert renewal at half-life
 		refreshScheduler.scheduleAtFixedRate(() -> {
 			try {
-				KafkaEmbeddedBroker.TlsConfig renewed = obtainInterNodeTls(sm.conn());
+				KafkaEmbeddedBroker.TlsConfig renewed = obtainInterNodeTls(sm.conn(), hostname);
 				broker.updateTls(renewed);
 				logger.info("Inter-node TLS cert renewed");
 			} catch (Exception e) {
@@ -172,6 +170,12 @@ public class EventBusHandler implements Handler {
 			return List.of(TypedEventBusBindings.bindAll(publisher, subscriber, topicManager));
 		}
 		return Collections.emptyList();
+	}
+
+	@Override
+	public void newTlsCert(X509.X509CertChain certChain, byte[] privateKeyDer) throws Exception {
+		logger.info("Received new TLS certificate from kernel ({} certs in chain)",
+				certChain.getChainCount());
 	}
 
 	@Override
@@ -330,8 +334,10 @@ public class EventBusHandler implements Handler {
 	// Inter-node mTLS
 	// -----------------------------------------------------------------------
 
-	private KafkaEmbeddedBroker.TlsConfig obtainInterNodeTls(ManagedChannel channel) throws Exception {
-		KeyPairGenerator kpg = KeyPairGenerator.getInstance("Ed25519");
+	private KafkaEmbeddedBroker.TlsConfig obtainInterNodeTls(ManagedChannel channel, String hostname) throws Exception {
+		// Kafka's SSL implementation does not support Ed25519 keys — use EC P-384.
+		KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
+		kpg.initialize(new java.security.spec.ECGenParameterSpec("secp384r1"));
 		KeyPair keyPair = kpg.generateKeyPair();
 
 		byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
@@ -341,9 +347,7 @@ public class EventBusHandler implements Handler {
 		long now = Instant.now().getEpochSecond();
 		long exp = now + LEAF_CERT_LIFETIME_SECONDS;
 
-		Tokenrequest.X509MintRequest request = Tokenrequest.X509MintRequest.newBuilder()
-				.setAud(SERVICE_NAME)
-				.setCertRequest(X509.X509CertRequest.newBuilder()
+		X509.X509CertRequest.Builder certReq = X509.X509CertRequest.newBuilder()
 						.setKey(KeyOuterClass.PublicKey.newBuilder()
 								.setId(keyId)
 								.setBase64(pubKeyBase64)
@@ -355,7 +359,14 @@ public class EventBusHandler implements Handler {
 						.addExtKeyUsage(X509.X509ExtKeyUsage.X509_EXT_KEY_USAGE_CLIENT_AUTH)
 						.addDnsNames(SERVICE_NAME)
 						.addDnsNames("*." + SERVICE_NAME)
-						.build())
+						.addDnsNames("localhost");
+		if (!hostname.equals(SERVICE_NAME) && !hostname.equals("localhost")) {
+			certReq.addDnsNames(hostname);
+		}
+
+		Tokenrequest.X509MintRequest request = Tokenrequest.X509MintRequest.newBuilder()
+				.setAud(SERVICE_NAME)
+				.setCertRequest(certReq.build())
 				.build();
 
 		String token = sm.getToken();

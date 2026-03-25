@@ -1,6 +1,6 @@
-language: java-maven
+language: java
 pkg: com.gitlab.secondstarcavalier.controlplane.services.eventbus
-output-dir: tacplus
+output-dir: tacplus/target/generated-sources
 states:
   - services/eventbus.EventbusState:rw
 grpc-servers:
@@ -9,6 +9,6 @@ grpc-s2s-clients:
   - services/kernel.KernelMintService
 post-gen:
   - cmd: mvn
-    args: [-pl, tacplus, package]
+    args: [-pl, server, -am, -Dtacplus.skip=true, -Dmaven.test.skip=true, package]
 container:
   image: registry.gitlab.com/secondstarcavalier/controlplane/services/eventbus/eventbus

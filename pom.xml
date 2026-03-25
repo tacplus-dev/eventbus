@@ -152,16 +152,6 @@
 				<version>2.0.17</version>
 			</dependency>
 			<dependency>
-				<groupId>com.gitlab.secondstarcavalier.controlplane.services.interfaces</groupId>
-				<artifactId>interfaces-httpclient</artifactId>
-				<version>1.0.5</version>
-			</dependency>
-			<dependency>
-				<groupId>com.gitlab.secondstarcavalier.controlplane.services.interfaces</groupId>
-				<artifactId>interfaces-graphs</artifactId>
-				<version>1.0.7</version>
-			</dependency>
-			<dependency>
 				<groupId>com.gitlab.secondstarcavalier.controlplane.services.eventbus</groupId>
 				<artifactId>eventbus-tacplus</artifactId>
 				<version>${project.version}</version>

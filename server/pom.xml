@@ -128,15 +128,6 @@
 			<groupId>io.javalin</groupId>
 			<artifactId>javalin</artifactId>
 		</dependency>
-		<!-- Interfaces -->
-		<dependency>
-			<groupId>com.gitlab.secondstarcavalier.controlplane.services.interfaces</groupId>
-			<artifactId>interfaces-httpclient</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>com.gitlab.secondstarcavalier.controlplane.services.interfaces</groupId>
-			<artifactId>interfaces-graphs</artifactId>
-		</dependency>
 		<!-- Testing -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
