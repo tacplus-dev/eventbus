@@ -16,8 +16,9 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.description="Event bus service with embedded Kafka broker"
 
 ARG TARGETARCH
-RUN wget -qO- "https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/grpcurl_1.9.3_linux_${TARGETARCH}.tar.gz" \
-      | tar -xz -C /usr/local/bin grpcurl \
+RUN wget -qO /usr/local/bin/grpc_health_probe \
+      "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.35/grpc_health_probe-linux-${TARGETARCH}" \
+    && chmod +x /usr/local/bin/grpc_health_probe \
     && addgroup -S eventbus && adduser -S eventbus -G eventbus
 
 COPY server/target/event-bus.jar /app/event-bus.jar
