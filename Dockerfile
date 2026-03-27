@@ -15,7 +15,10 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.title="EventBus" \
       org.opencontainers.image.description="Event bus service with embedded Kafka broker"
 
-RUN addgroup -S eventbus && adduser -S eventbus -G eventbus
+ARG TARGETARCH
+RUN wget -qO- "https://github.com/fullstorydev/grpcurl/releases/download/v1.9.3/grpcurl_1.9.3_linux_${TARGETARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin grpcurl \
+    && addgroup -S eventbus && adduser -S eventbus -G eventbus
 
 COPY server/target/event-bus.jar /app/event-bus.jar
 COPY eventbus /usr/local/bin/eventbus

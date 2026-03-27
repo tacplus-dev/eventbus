@@ -20,7 +20,7 @@ import java.util.Map;
  * Receives typed protobuf messages from the client, serializes to bytes,
  * and publishes to the corresponding Kafka topic.
  *
- * Caller identity claims (sub, aud, iss, service_id, instance_id) are
+ * Caller identity claims (sub, aud, iss, email, service_id, instance_id) are
  * extracted from the bearer token and attached as Kafka message headers,
  * providing identity provenance for every published event.
  *
