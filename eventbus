@@ -1,0 +1,8 @@
+#!/bin/sh
+exec java \
+  -XX:+UseG1GC \
+  -XX:MaxGCPauseMillis=20 \
+  -XX:InitiatingHeapOccupancyPercent=35 \
+  -Djava.awt.headless=true \
+  -jar /app/event-bus.jar \
+  "$@"
