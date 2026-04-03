@@ -147,9 +147,23 @@ public class KafkaSubscriber {
 
         private void runLoop(SeekParams initial, RecordHandler handler) {
             Set<TopicPartition> partitions = consumer.assignment();
+            // Wait for partition assignment — the initial poll in createSession may not
+            // have been long enough for group rebalancing to complete.
             if (partitions.isEmpty()) {
-                logger.warn("No partitions assigned for topic {}", topic);
-                return;
+                for (int attempt = 0; attempt < 5 && !closed; attempt++) {
+                    logger.info("Waiting for partition assignment on topic {} (attempt {})", topic, attempt + 1);
+                    try {
+                        consumer.poll(Duration.ofMillis(5000));
+                    } catch (org.apache.kafka.common.errors.WakeupException e) {
+                        if (closed) return;
+                    }
+                    partitions = consumer.assignment();
+                    if (!partitions.isEmpty()) break;
+                }
+                if (partitions.isEmpty()) {
+                    logger.warn("No partitions assigned for topic {} after retries", topic);
+                    return;
+                }
             }
 
             applySeek(consumer, partitions, initial);
@@ -278,11 +292,15 @@ public class KafkaSubscriber {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG,
-                initial.consumerGroup() != null ? initial.consumerGroup() : UUID.randomUUID().toString());
+                initial.consumerGroup() != null && !initial.consumerGroup().isEmpty()
+                        ? initial.consumerGroup() : UUID.randomUUID().toString());
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        // Allow time for group rebalancing to complete before timing out.
+        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
+        props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "5000");
 
         KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props);
 
@@ -295,8 +313,9 @@ public class KafkaSubscriber {
         } else {
             // Group-managed subscription with rebalancing.
             consumer.subscribe(Collections.singletonList(topic));
-            // Initial poll to trigger partition assignment.
-            consumer.poll(Duration.ofMillis(1000));
+            // Initial poll to trigger partition assignment — allow enough time
+            // for the consumer group rebalance protocol to complete.
+            consumer.poll(Duration.ofMillis(5000));
         }
 
         return new Session(topic, consumer);

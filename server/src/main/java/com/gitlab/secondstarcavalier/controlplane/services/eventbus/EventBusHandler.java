@@ -30,12 +30,12 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.type
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.key.KeyOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.kernel.KernelMintServiceGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.kernel.MintGrpc;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventBusService.EventBusServiceHandler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler;
 
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
@@ -78,12 +78,12 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
-	public EventBusServiceHandler getEventBusGrpcImpl() {
+	public AdminHandler getAdminGrpcImpl() {
 		return handlerImpl;
 	}
 
 	@Override
-	public void handleEventBusConfig(Eventbus.Config config) throws Exception {
+	public void handleAdminConfig(Eventbus.Config config) throws Exception {
 		// Config already has defaults applied and env vars merged by ServiceManager.
 		Helpers.validateConfig(config);
 
@@ -179,6 +179,16 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public void onEventStreamHerald(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
+		logger.debug("Received herald event stream record at offset={}", meta.offset);
+	}
+
+	@Override
+	public void onEventStreamAegis(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
+		logger.debug("Received aegis event stream record at offset={}", meta.offset);
+	}
+
+	@Override
 	public void shutdown() {
 		logger.info("Shutting down event-bus");
 		refreshScheduler.shutdownNow();
@@ -194,7 +204,7 @@ public class EventBusHandler implements Handler {
 	// EventBusServiceHandler implementation
 	// -----------------------------------------------------------------------
 
-	private static class EventBusServiceHandlerImpl implements EventBusServiceHandler {
+	private static class EventBusServiceHandlerImpl implements AdminHandler {
 
 		private final TopicManager topicManager;
 		private final KafkaPublisher publisher;
@@ -373,7 +383,7 @@ public class EventBusHandler implements Handler {
 		Metadata headers = new Metadata();
 		headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
 				"Bearer " + token);
-		KernelMintServiceGrpc.KernelMintServiceBlockingStub stub = KernelMintServiceGrpc.newBlockingStub(channel)
+		MintGrpc.MintBlockingStub stub = MintGrpc.newBlockingStub(channel)
 				.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
 
 		X509.X509CertChain certChain = stub.x509Mint(request);

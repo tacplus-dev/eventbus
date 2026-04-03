@@ -95,7 +95,7 @@ class TopicDiscoveryTest {
                 .anyMatch(t -> t.getFieldName().equals("topology_graph"));
         assertFalse(hasSingleton, "singleton boundaries should not be discovered as topics");
 
-        // kernel boundary should not be discovered (store != "eventbus")
+        // kernel boundary should not be discovered (tag != "eventbus")
         boolean hasKernel = topics.stream()
                 .anyMatch(t -> t.getStateName().equals("Cluster"));
         assertFalse(hasKernel, "kernel-store boundaries should not be discovered");

@@ -1,37 +1,39 @@
 {
+  "name": "aegis",
   "full_path": "services/aegis",
   "boundaries": [
     {
       "state_root": "AegisState",
       "boundary": "event_stream",
       "type_fqn": "aegis.TopologyEvent",
-      "store": "eventbus",
+      "tag": "eventbus",
       "graph_type": "topic"
     },
     {
       "state_root": "AegisState",
       "boundary": "topology_graph",
       "type_fqn": "aegis.TopologyGraph",
-      "store": "eventbus",
+      "tag": "eventbus",
       "graph_type": "singleton"
     },
     {
       "state_root": "AegisState",
       "boundary": "conversations",
       "type_fqn": "aegis.ConversationEvent",
-      "store": "eventbus",
+      "tag": "eventbus",
       "graph_type": "topic"
     }
   ],
   "children": [
     {
+      "name": "kernel",
       "full_path": "services/kernel",
       "boundaries": [
         {
           "state_root": "Cluster",
           "boundary": "members",
           "type_fqn": "kernel.ClusterMember",
-          "store": "kernel",
+          "tag": "kernel",
           "graph_type": "collection"
         }
       ],

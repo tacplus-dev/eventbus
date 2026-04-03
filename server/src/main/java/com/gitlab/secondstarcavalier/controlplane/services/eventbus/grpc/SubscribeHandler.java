@@ -104,9 +104,10 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 
 	@Override
 	public void onCompleted() {
-		if (session != null) {
-			session.close();
-		}
+		// Client half-close means no more SubscribeRequests will be sent.
+		// Do NOT close the session — the server should keep streaming events
+		// until the client disconnects (onError with CANCELLED).
+		logger.debug("Client half-closed subscribe stream for topic {}", kafkaTopic);
 	}
 
 	private static SeekParams toSeekParams(Eventbus.SubscribeRequest request) {

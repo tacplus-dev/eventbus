@@ -31,15 +31,23 @@ public class TopicDiscovery {
         private final String fieldType;     // FQN e.g. "aegis.TopologyEvent"
         private final String topicName;     // Kafka topic name
         private final String packagePath;   // e.g. "services/aegis"
+        private final String typePathPrefix; // e.g. "services" or "common"
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath) {
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath, "services");
+        }
+
+        public TopicField(String stateName, String statePackage, String fieldName,
+                          String fieldType, String topicName, String packagePath,
+                          String typePathPrefix) {
             this.stateName = stateName;
             this.statePackage = statePackage;
             this.fieldName = fieldName;
             this.fieldType = fieldType;
             this.topicName = topicName;
             this.packagePath = packagePath;
+            this.typePathPrefix = typePathPrefix;
         }
 
         public String getStateName() { return stateName; }
@@ -56,15 +64,14 @@ public class TopicDiscovery {
         /**
          * Returns the fully qualified Java outer class import for the topic's proto type.
          * Proto messages are nested inside the outer class (e.g., Aegis.TopologyEvent).
+         * Handles types from both services/ and common/ proto directories.
          */
         public String getJavaOuterClassImport(String javaPackageBase) {
-            // fieldType is FQN like "aegis.TopologyEvent"
-            // Outer class: {base}.types.services.{protoPackage}.{ProtoPackagePascal}
             String protoPackage = fieldType.contains(".")
                     ? fieldType.substring(0, fieldType.lastIndexOf('.'))
                     : statePackage;
             String outerClass = StringUtils.toPascalCase(protoPackage);
-            return javaPackageBase + ".types.services." + protoPackage + "." + outerClass;
+            return javaPackageBase + ".types." + typePathPrefix + "." + protoPackage + "." + outerClass;
         }
 
         /**
@@ -84,32 +91,58 @@ public class TopicDiscovery {
     /**
      * Reads registry.json and discovers eventbus-backed topics.
      * Walks the PackageNode tree looking for BoundaryInfo entries with
-     * store == "eventbus" and graph_type == "topic".
+     * tag == "eventbus" and graph_type == "topic".
      */
     public List<TopicField> discoverTopics() throws IOException {
         String json = Files.readString(registryPath);
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
 
+        // Build a map of proto package -> path prefix (e.g., "sensor" -> "common",
+        // "aegis" -> "services") by walking the tree. This allows us to resolve
+        // whether a type lives under common/ or services/ for Java imports.
+        Map<String, String> packagePathMap = new HashMap<>();
+        collectPackagePaths(root, packagePathMap);
+
         List<TopicField> topics = new ArrayList<>();
-        walkNode(root, topics);
+        walkNode(root, topics, packagePathMap);
         return topics;
     }
 
-    private void walkNode(JsonObject node, List<TopicField> topics) {
+    /**
+     * Walks the registry tree and maps proto package names to their path prefix.
+     * E.g., a node with full_path "common/sensor" maps package "sensor" -> "common".
+     */
+    private void collectPackagePaths(JsonObject node, Map<String, String> map) {
+        String fullPath = getStr(node, "full_path");
+        String name = getStr(node, "name");
+        if (!fullPath.isEmpty() && !name.isEmpty() && fullPath.contains("/")) {
+            // Extract prefix: "services/aegis" -> "services", "common/sensor" -> "common"
+            String prefix = fullPath.substring(0, fullPath.indexOf('/'));
+            map.put(name, prefix);
+        }
+        if (node.has("children")) {
+            for (JsonElement child : node.getAsJsonArray("children")) {
+                collectPackagePaths(child.getAsJsonObject(), map);
+            }
+        }
+    }
+
+    private void walkNode(JsonObject node, List<TopicField> topics,
+                          Map<String, String> packagePathMap) {
         String packagePath = node.has("full_path")
                 ? node.get("full_path").getAsString() : "";
 
-        // Check boundaries in this node (existing eventbus topic discovery).
+        // Check boundaries in this node (eventbus topic discovery).
         if (node.has("boundaries")) {
             JsonArray boundaries = node.getAsJsonArray("boundaries");
 
             for (JsonElement elem : boundaries) {
                 JsonObject boundary = elem.getAsJsonObject();
 
-                String store = getStr(boundary, "store");
+                String tag = getStr(boundary, "tag");
                 String graphType = getStr(boundary, "graph_type");
 
-                if ("eventbus".equals(store) && "topic".equals(graphType)) {
+                if ("eventbus".equals(tag) && "topic".equals(graphType)) {
                     String stateRoot = getStr(boundary, "state_root");
                     String fieldName = getStr(boundary, "boundary");
                     String typeFqn = getStr(boundary, "type_fqn");
@@ -119,6 +152,9 @@ public class TopicDiscovery {
                             ? typeFqn.substring(0, typeFqn.lastIndexOf('.'))
                             : "";
 
+                    // Resolve whether the type lives under services/ or common/.
+                    String typePrefix = packagePathMap.getOrDefault(protoPackage, "services");
+
                     // Build Kafka topic name: {packagePath}.{stateRoot}.{FieldPascal}
                     String fieldPascal = StringUtils.toPascalCase(fieldName);
                     String topicName = packagePath.replace('/', '.') + "." +
@@ -126,7 +162,7 @@ public class TopicDiscovery {
 
                     topics.add(new TopicField(
                             stateRoot, protoPackage, fieldName,
-                            typeFqn, topicName, packagePath));
+                            typeFqn, topicName, packagePath, typePrefix));
                 }
             }
         }
@@ -141,10 +177,10 @@ public class TopicDiscovery {
                     String fqn = getStr(type, "fqn");
                     String pkg = getStr(type, "package");
                     String topicName = "bigdata." + bigdataName;
-                    // stateName is empty for bigdata types — rpcPrefix uses fieldName only.
+                    String typePrefix = packagePathMap.getOrDefault(pkg, "services");
                     topics.add(new TopicField(
                             "", pkg, bigdataName,
-                            fqn, topicName, packagePath));
+                            fqn, topicName, packagePath, typePrefix));
                 }
             }
         }
@@ -153,7 +189,7 @@ public class TopicDiscovery {
         if (node.has("children")) {
             JsonArray children = node.getAsJsonArray("children");
             for (JsonElement child : children) {
-                walkNode(child.getAsJsonObject(), topics);
+                walkNode(child.getAsJsonObject(), topics, packagePathMap);
             }
         }
     }
