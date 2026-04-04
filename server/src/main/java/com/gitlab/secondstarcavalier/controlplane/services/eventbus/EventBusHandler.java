@@ -179,13 +179,13 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
-	public void onEventStreamHerald(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
-		logger.debug("Received herald event stream record at offset={}", meta.offset);
+	public void onEventStream(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
+		logger.debug("Received event stream record at offset={}", meta.offset);
 	}
 
 	@Override
-	public void onEventStreamAegis(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
-		logger.debug("Received aegis event stream record at offset={}", meta.offset);
+	public void onTraceEvents(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
+		logger.debug("Received trace event at offset={}", meta.offset);
 	}
 
 	@Override
