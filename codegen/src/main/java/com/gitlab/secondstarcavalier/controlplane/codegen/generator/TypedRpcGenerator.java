@@ -134,7 +134,14 @@ public class TypedRpcGenerator {
             sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
             sb.append("                (StreamObserver<Eventbus.PublishResponse> resp) ->\n");
             sb.append("                    new PublishHandler<>(TopicRegistry.TOPIC_").append(constName)
-              .append(", publisher, topicManager, resp)));\n\n");
+              .append(", publisher, topicManager, resp,\n");
+            if (topic.hasEmailField()) {
+                // C2S topic: stamp the caller's email from the JWT onto the proto message
+                sb.append("                        (msg, email) -> msg.toBuilder().setEmail(email).build())));\n\n");
+            } else {
+                // S2S/internal topic: no identity stamping needed
+                sb.append("                        null)));\n\n");
+            }
 
             // Subscribe binding
             sb.append("        svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");

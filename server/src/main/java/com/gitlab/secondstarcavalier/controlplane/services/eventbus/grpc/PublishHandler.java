@@ -6,8 +6,6 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicM
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
 
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
-import com.google.protobuf.Descriptors;
-import com.google.protobuf.Message;
 import com.google.protobuf.MessageLite;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -22,12 +20,13 @@ import java.util.Map;
  * Receives typed protobuf messages from the client, serializes to bytes,
  * and publishes to the corresponding Kafka topic.
  *
- * Caller identity claims (sub, aud, iss, email, service_id, instance_id) are
- * extracted from the bearer token and attached as Kafka message headers,
- * providing identity provenance for every published event.
+ * Caller identity claims are extracted from the bearer token and attached
+ * as Kafka message headers. For C2S topics, the generated code passes an
+ * {@link IdentityStamper} that stamps the caller's email onto the proto
+ * message before serialization.
  *
  * One instance per stream. The type parameter is the proto message type
- * for the topic (e.g., TopologyEvent).
+ * for the topic (e.g., SensorEvent).
  */
 public class PublishHandler<T extends MessageLite> implements StreamObserver<T> {
 
@@ -36,28 +35,30 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     /** JWT claims to propagate as Kafka headers. */
     private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id"};
 
-    /** Maps JWT claim names to proto field names for identity stamping. */
-    private static final String[][] CLAIM_TO_FIELD = {
-        {"caller.sub", "subject"},
-        {"caller.iss", "issuer"},
-        {"caller.aud", "audience"},
-        {"caller.email", "email"},
-        {"caller.service_id", "service_id"},
-        {"caller.instance_id", "instance_id"},
-    };
+    /**
+     * Stamps identity onto a proto message. Generated per-type by the codegen
+     * plugin for C2S topics (e.g., sets the email field from the JWT claim).
+     */
+    @FunctionalInterface
+    public interface IdentityStamper<T> {
+        T stamp(T message, String email);
+    }
 
     private final String kafkaTopic;
     private final KafkaPublisher publisher;
     private final StreamObserver<Eventbus.PublishResponse> responseObserver;
     private final Map<String, String> callerHeaders;
+    private final IdentityStamper<T> stamper;
 
     public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
                           TopicManager topicManager,
-                          StreamObserver<Eventbus.PublishResponse> responseObserver) {
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper) {
         this.kafkaTopic = kafkaTopic;
         this.publisher = publisher;
         this.responseObserver = responseObserver;
         this.callerHeaders = extractCallerClaims();
+        this.stamper = stamper;
         topicManager.ensureTopicExists(kafkaTopic);
     }
 
@@ -100,48 +101,18 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         return end > 0 ? rest.substring(0, end) : null;
     }
 
-    /**
-     * Stamps identity claims from the caller's JWT onto proto message fields
-     * using protobuf reflection. Fields not present on the message type are
-     * silently skipped. This ensures EventBus is the trust boundary for
-     * identity — clients cannot forge identity fields.
-     */
-    @SuppressWarnings("unchecked")
-    private T stampIdentityClaims(T message) {
-        if (!(message instanceof Message msg)) return message;
-        if (callerHeaders.isEmpty()) return message;
-
-        Message.Builder builder = msg.toBuilder();
-        Descriptors.Descriptor desc = msg.getDescriptorForType();
-        boolean modified = false;
-
-        for (String[] mapping : CLAIM_TO_FIELD) {
-            String claimKey = mapping[0];
-            String fieldName = mapping[1];
-            String value = callerHeaders.get(claimKey);
-            if (value == null || value.isEmpty()) continue;
-
-            Descriptors.FieldDescriptor fd = desc.findFieldByName(fieldName);
-            if (fd != null && fd.getType() == Descriptors.FieldDescriptor.Type.STRING) {
-                builder.setField(fd, value);
-                modified = true;
-            }
-        }
-
-        return modified ? (T) builder.build() : message;
-    }
-
     @Override
     public void onNext(T message) {
-        T stamped = stampIdentityClaims(message);
+        T stamped = message;
+        if (stamper != null) {
+            String email = callerHeaders.getOrDefault("caller.email", "");
+            if (!email.isEmpty()) {
+                stamped = stamper.stamp(message, email);
+            }
+        }
         byte[] bytes = stamped.toByteArray();
-        // DEBUG: log every publish attempt
-        logger.info("[DEBUG] Publishing {} bytes to topic={}", bytes.length, kafkaTopic);
         publisher.publish(kafkaTopic, null, callerHeaders, bytes)
                 .thenAccept(metadata -> {
-                    // DEBUG: log successful publish with partition/offset
-                    logger.info("[DEBUG] Published to topic={} partition={} offset={}",
-                            kafkaTopic, metadata.partition(), metadata.offset());
                     synchronized (responseObserver) {
                         responseObserver.onNext(Eventbus.PublishResponse.newBuilder()
                                 .setPartition(metadata.partition())
