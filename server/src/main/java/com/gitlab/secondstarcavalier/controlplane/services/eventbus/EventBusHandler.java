@@ -7,7 +7,7 @@ import java.security.KeyPairGenerator;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
+
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Executors;
@@ -21,7 +21,10 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaE
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaPublisher;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaSubscriber;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicManager;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TopicRegistry;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TypedEventBusBindings;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.WatchTraceHandler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.EventbusStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Helpers;
@@ -69,6 +72,8 @@ public class EventBusHandler implements Handler {
 	private KafkaSubscriber subscriber;
 	private TopicManager topicManager;
 	private EventBusServiceHandlerImpl handlerImpl;
+	private WatchTraceHandler watchTraceHandler;
+	private KafkaSubscriber.Session traceSession;
 
 	public EventBusHandler(ServiceManager sm) {
 		this.sm = sm;
@@ -162,12 +167,35 @@ public class EventBusHandler implements Handler {
 
 		// Create the handler impl
 		handlerImpl = new EventBusServiceHandlerImpl(topicManager, publisher, subscriber);
+		watchTraceHandler = new WatchTraceHandler();
+
+		// Subscribe to the trace topic to dispatch events to WatchTrace streams
+		if (subscriber != null) {
+			String traceTopic = TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS;
+			KafkaSubscriber.SeekParams seekParams = new KafkaSubscriber.SeekParams(
+					KafkaSubscriber.SeekMode.LATEST, 0, 0, "eventbus-trace-dispatch",
+					false, KafkaSubscriber.BackpressurePolicy.BUFFER, 1, List.of());
+			traceSession = subscriber.createSession(traceTopic, seekParams);
+			Thread traceThread = new Thread(() -> traceSession.run(seekParams, record -> {
+				try {
+					Trace.TraceEvent event = Trace.TraceEvent.parseFrom(record.value());
+					watchTraceHandler.dispatch(event);
+				} catch (Exception e) {
+					logger.warn("Failed to parse trace event at offset={}: {}", record.offset(), e.getMessage());
+				}
+				return true;
+			}), "eventbus-trace-dispatch");
+			traceThread.setDaemon(true);
+			traceThread.start();
+			logger.info("Trace dispatch consumer started on topic {}", traceTopic);
+		}
 
 		logger.info("Event-bus initialized: role={}, nodeId={}", role, nodeId);
 	}
 
 	@Override
 	public List<ServerServiceDefinition> additionalServices() {
+		List<ServerServiceDefinition> services = new ArrayList<>();
 		if (publisher != null && subscriber != null && topicManager != null) {
 			// Wrap typed RPCs with the request-id interceptor so that
 			// Auth.tokenPayloadFromContext() returns the decoded JWT payload.
@@ -175,9 +203,13 @@ public class EventBusHandler implements Handler {
 			ServerServiceDefinition typed = TypedEventBusBindings.bindAll(publisher, subscriber, topicManager);
 			ServerServiceDefinition intercepted = ServerInterceptors.intercept(
 					typed, Auth.requestIdInterceptor());
-			return List.of(intercepted);
+			services.add(intercepted);
 		}
-		return Collections.emptyList();
+		// WatchTrace has auth_disabled — no interceptor needed
+		if (watchTraceHandler != null) {
+			services.add(watchTraceHandler.bindService());
+		}
+		return services;
 	}
 
 	@Override
@@ -187,18 +219,12 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
-	public void onEventStream(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
-		logger.debug("Received event stream record at offset={}", meta.offset);
-	}
-
-	@Override
-	public void onTraceEvents(byte[] event, Handler.SubscriptionMeta meta) throws Exception {
-		logger.debug("Received trace event at offset={}", meta.offset);
-	}
-
-	@Override
 	public void shutdown() {
 		logger.info("Shutting down event-bus");
+		if (traceSession != null)
+			traceSession.close();
+		if (watchTraceHandler != null)
+			watchTraceHandler.shutdown();
 		refreshScheduler.shutdownNow();
 		if (publisher != null)
 			publisher.close();
