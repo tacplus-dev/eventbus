@@ -6,6 +6,8 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicM
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
 
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.Message;
 import com.google.protobuf.MessageLite;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;
@@ -32,7 +34,17 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     private static final Logger logger = LoggerFactory.getLogger(PublishHandler.class);
 
     /** JWT claims to propagate as Kafka headers. */
-    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "service_id", "instance_id"};
+    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id"};
+
+    /** Maps JWT claim names to proto field names for identity stamping. */
+    private static final String[][] CLAIM_TO_FIELD = {
+        {"caller.sub", "subject"},
+        {"caller.iss", "issuer"},
+        {"caller.aud", "audience"},
+        {"caller.email", "email"},
+        {"caller.service_id", "service_id"},
+        {"caller.instance_id", "instance_id"},
+    };
 
     private final String kafkaTopic;
     private final KafkaPublisher publisher;
@@ -88,9 +100,41 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         return end > 0 ? rest.substring(0, end) : null;
     }
 
+    /**
+     * Stamps identity claims from the caller's JWT onto proto message fields
+     * using protobuf reflection. Fields not present on the message type are
+     * silently skipped. This ensures EventBus is the trust boundary for
+     * identity — clients cannot forge identity fields.
+     */
+    @SuppressWarnings("unchecked")
+    private T stampIdentityClaims(T message) {
+        if (!(message instanceof Message msg)) return message;
+        if (callerHeaders.isEmpty()) return message;
+
+        Message.Builder builder = msg.toBuilder();
+        Descriptors.Descriptor desc = msg.getDescriptorForType();
+        boolean modified = false;
+
+        for (String[] mapping : CLAIM_TO_FIELD) {
+            String claimKey = mapping[0];
+            String fieldName = mapping[1];
+            String value = callerHeaders.get(claimKey);
+            if (value == null || value.isEmpty()) continue;
+
+            Descriptors.FieldDescriptor fd = desc.findFieldByName(fieldName);
+            if (fd != null && fd.getType() == Descriptors.FieldDescriptor.Type.STRING) {
+                builder.setField(fd, value);
+                modified = true;
+            }
+        }
+
+        return modified ? (T) builder.build() : message;
+    }
+
     @Override
     public void onNext(T message) {
-        byte[] bytes = message.toByteArray();
+        T stamped = stampIdentityClaims(message);
+        byte[] bytes = stamped.toByteArray();
         // DEBUG: log every publish attempt
         logger.info("[DEBUG] Publishing {} bytes to topic={}", bytes.length, kafkaTopic);
         publisher.publish(kafkaTopic, null, callerHeaders, bytes)

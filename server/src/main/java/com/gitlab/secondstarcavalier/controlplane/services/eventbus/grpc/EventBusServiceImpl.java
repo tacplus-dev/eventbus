@@ -7,6 +7,7 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicM
 
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.AdminGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 import com.google.protobuf.Empty;
 import com.google.protobuf.Timestamp;
 import io.grpc.Status;
@@ -38,10 +39,8 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	// Topic admin
 	// -----------------------------------------------------------------------
 
-	// AGENT : TODO : The tacplus generated code should not be sending us Empty
-
 	@Override
-	public void listTopics(Empty request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
+	public void listTopics(Trace.TraceRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
 		try {
 			List<TopicManager.TopicInfo> topics = topicManager.listTopics();
 
@@ -125,10 +124,8 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 		}
 	}
 
-	// AGENT : TODO : The tacplus generated code should not be sending us Empty
-
 	@Override
-	public void listConsumerGroups(Empty request,
+	public void listConsumerGroups(Trace.TraceRequest request,
 			StreamObserver<Eventbus.ListConsumerGroupsResponse> responseObserver) {
 		try {
 			List<TopicManager.ConsumerGroupInfo> groups = topicManager.listConsumerGroups();
@@ -210,7 +207,7 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	// -----------------------------------------------------------------------
 
 	@Override
-	public void getClusterHealth(Empty request,
+	public void getClusterHealth(Trace.TraceRequest request,
 			StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
 		try {
 			TopicManager.ClusterHealth health = topicManager.getClusterHealth();

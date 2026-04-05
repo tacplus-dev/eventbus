@@ -32,6 +32,7 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.type
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.kernel.MintGrpc;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
@@ -39,6 +40,7 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm
 
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
+import io.grpc.ServerInterceptors;
 import io.grpc.ServerServiceDefinition;
 import io.grpc.stub.MetadataUtils;
 
@@ -167,7 +169,13 @@ public class EventBusHandler implements Handler {
 	@Override
 	public List<ServerServiceDefinition> additionalServices() {
 		if (publisher != null && subscriber != null && topicManager != null) {
-			return List.of(TypedEventBusBindings.bindAll(publisher, subscriber, topicManager));
+			// Wrap typed RPCs with the request-id interceptor so that
+			// Auth.tokenPayloadFromContext() returns the decoded JWT payload.
+			// This enables PublishHandler to stamp identity claims from C2S tokens.
+			ServerServiceDefinition typed = TypedEventBusBindings.bindAll(publisher, subscriber, topicManager);
+			ServerServiceDefinition intercepted = ServerInterceptors.intercept(
+					typed, Auth.requestIdInterceptor());
+			return List.of(intercepted);
 		}
 		return Collections.emptyList();
 	}
