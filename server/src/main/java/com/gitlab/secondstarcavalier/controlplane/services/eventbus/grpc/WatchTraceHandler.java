@@ -1,12 +1,9 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
 package com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc;
 
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
-import io.grpc.MethodDescriptor;
-import io.grpc.ServerCallHandler;
-import io.grpc.ServerServiceDefinition;
-import io.grpc.protobuf.ProtoUtils;
-import io.grpc.stub.ServerCalls;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -16,7 +13,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Implements the WatchTrace RPC on the eventbus.Trace gRPC service.
+ * Implements the generated TraceSessionHandler interface for WatchTrace.
  *
  * WatchTrace opens a server-streaming trace session:
  * 1. Server generates a unique trace_id and sends it as the first TraceEvent
@@ -25,20 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * 4. EventBus dispatches matching events to this stream via {@link #dispatch}
  * 5. On disconnect, the trace_id entry is cleaned up
  *
- * No authentication — the trace_id itself is the access credential.
+ * auth_disabled: true — the trace_id itself is the access credential.
  */
-public class WatchTraceHandler {
+public class WatchTraceHandler implements TraceSessionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(WatchTraceHandler.class);
-    private static final String SERVICE_NAME = "eventbus.Trace";
-
-    public static final MethodDescriptor<Trace.TraceRequest, Trace.TraceEvent> WATCH_TRACE =
-            MethodDescriptor.<Trace.TraceRequest, Trace.TraceEvent>newBuilder()
-                    .setType(MethodDescriptor.MethodType.SERVER_STREAMING)
-                    .setFullMethodName(SERVICE_NAME + "/WatchTrace")
-                    .setRequestMarshaller(ProtoUtils.marshaller(Trace.TraceRequest.getDefaultInstance()))
-                    .setResponseMarshaller(ProtoUtils.marshaller(Trace.TraceEvent.getDefaultInstance()))
-                    .build();
 
     private final ConcurrentHashMap<String, StreamObserver<Trace.TraceEvent>> traceStreams =
             new ConcurrentHashMap<>();
@@ -65,18 +53,8 @@ public class WatchTraceHandler {
         }
     }
 
-    /**
-     * Returns the gRPC service definition for eventbus.Trace.
-     */
-    public ServerServiceDefinition bindService() {
-        ServerCallHandler<Trace.TraceRequest, Trace.TraceEvent> handler =
-                ServerCalls.asyncServerStreamingCall(this::watchTrace);
-        return ServerServiceDefinition.builder(SERVICE_NAME)
-                .addMethod(WATCH_TRACE, handler)
-                .build();
-    }
-
-    private void watchTrace(Trace.TraceRequest request, StreamObserver<Trace.TraceEvent> responseObserver) {
+    @Override
+    public void watchTrace(Caller caller, StreamObserver<Trace.TraceEvent> responseObserver) {
         String traceId = UUID.randomUUID().toString();
 
         // Register cleanup on client disconnect

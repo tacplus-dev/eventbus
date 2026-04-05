@@ -40,6 +40,7 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession;
 
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
@@ -205,9 +206,9 @@ public class EventBusHandler implements Handler {
 					typed, Auth.requestIdInterceptor());
 			services.add(intercepted);
 		}
-		// WatchTrace has auth_disabled — no interceptor needed
+		// WatchTrace via generated TraceSession wrapper (auth_disabled: true)
 		if (watchTraceHandler != null) {
-			services.add(watchTraceHandler.bindService());
+			services.add(new TraceSession(watchTraceHandler).bindService());
 		}
 		return services;
 	}
