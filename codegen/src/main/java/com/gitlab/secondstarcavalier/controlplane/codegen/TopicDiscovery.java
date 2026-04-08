@@ -133,6 +133,16 @@ public class TopicDiscovery {
             // Extract prefix: "services/aegis" -> "services", "common/sensor" -> "common"
             String prefix = fullPath.substring(0, fullPath.indexOf('/'));
             map.put(name, prefix);
+            // Also map proto package names from types (may differ from directory name,
+            // e.g. directory "claude-sensor" has proto package "claudesensor").
+            if (node.has("types")) {
+                for (JsonElement elem : node.getAsJsonArray("types")) {
+                    String pkg = getStr(elem.getAsJsonObject(), "package");
+                    if (!pkg.isEmpty()) {
+                        map.putIfAbsent(pkg, prefix);
+                    }
+                }
+            }
         }
         if (node.has("children")) {
             for (JsonElement child : node.getAsJsonArray("children")) {
