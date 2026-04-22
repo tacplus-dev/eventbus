@@ -30,6 +30,8 @@ public class WatchTraceHandler implements TraceSessionHandler {
 
     private final ConcurrentHashMap<String, StreamObserver<Trace.TraceEvent>> traceStreams =
             new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> traceSeqs =
+            new ConcurrentHashMap<>();
 
     /**
      * Dispatches a trace event to the active WatchTrace stream matching the trace_id.
@@ -43,12 +45,17 @@ public class WatchTraceHandler implements TraceSessionHandler {
         StreamObserver<Trace.TraceEvent> observer = traceStreams.get(traceId);
         if (observer != null) {
             try {
+                // Assign monotonic seq for stable ordering within the trace session.
+                int seq = traceSeqs.computeIfAbsent(traceId,
+                        k -> new java.util.concurrent.atomic.AtomicInteger(0)).getAndIncrement();
+                Trace.TraceEvent stamped = event.toBuilder().setSeq(seq).build();
                 synchronized (observer) {
-                    observer.onNext(event);
+                    observer.onNext(stamped);
                 }
             } catch (Exception e) {
                 logger.debug("Trace stream {} send failed, removing", traceId, e);
                 traceStreams.remove(traceId);
+                traceSeqs.remove(traceId);
             }
         }
     }
@@ -63,6 +70,7 @@ public class WatchTraceHandler implements TraceSessionHandler {
                     (ServerCallStreamObserver<Trace.TraceEvent>) responseObserver;
             serverObserver.setOnCancelHandler(() -> {
                 traceStreams.remove(traceId);
+                traceSeqs.remove(traceId);
                 logger.info("Trace stream {} closed (client cancelled)", traceId);
             });
         }
