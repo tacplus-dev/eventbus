@@ -1,10 +1,6 @@
 language: java
 pkg: com.gitlab.secondstarcavalier.controlplane.services.eventbus
 output-dir: tacplus/target/generated-sources
-grpc-servers:
-  - services/eventbus.Admin
-grpc-s2s-clients:
-  - services/kernel.Mint
 post-gen:
   - cmd: mvn
     args: [-pl, server, -am, -Dtacplus.skip=true, -Dmaven.test.skip=true, package]
