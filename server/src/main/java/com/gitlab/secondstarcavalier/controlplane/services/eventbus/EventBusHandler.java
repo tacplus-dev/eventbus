@@ -98,7 +98,10 @@ public class EventBusHandler implements Handler {
 		var configStub = EventbusConfigStateServiceGrpc.newBlockingStub(sm.conn())
 				.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders));
 		Eventbus.Config config = configStub.getConfig(Trace.TraceRequest.getDefaultInstance());
-		// Config already has defaults applied and env vars merged by ServiceManager.
+		// Apply defaults and merge env vars (mirrors what the generated ServiceManager does).
+		config = Helpers.configDefaults(config).build();
+		Eventbus.Config envCfg = Helpers.configFromEnvVar(System.getenv()).build();
+		config = Helpers.mergeConfig(envCfg, config).build();
 		Helpers.validateConfig(config);
 
 		// Validate node role
