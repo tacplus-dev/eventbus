@@ -41,12 +41,18 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.type
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 
 import io.grpc.ManagedChannel;
+import io.grpc.MethodDescriptor;
 import io.grpc.Metadata;
 import io.grpc.ServerInterceptors;
 import io.grpc.ServerServiceDefinition;
 import io.grpc.Status;
 import io.grpc.stub.MetadataUtils;
+import io.grpc.stub.ServerCalls;
 import io.grpc.stub.StreamObserver;
+
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.PublishHandler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.SubscribeHandler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.vservices.claudesensor.Claudesensor;
 
 /**
  * EventBusHandler implements the tacplus-generated Handler interface.
@@ -67,12 +73,14 @@ public class EventBusHandler implements Handler {
 	private final ScheduledExecutorService refreshScheduler;
 	private volatile boolean initialized = false;
 
-	// Initialized on first newTlsCert() delivery
+	// Initialized on first newTlsCert() delivery.
+	// Volatile so additionalServices() (called before newTlsCert) can
+	// safely observe the values set later by initialize().
 	private KafkaEmbeddedBroker broker;
-	private KafkaPublisher publisher;
-	private KafkaSubscriber subscriber;
-	private TopicManager topicManager;
-	private EventBusServiceHandlerImpl handlerImpl;
+	private volatile KafkaPublisher publisher;
+	private volatile KafkaSubscriber subscriber;
+	private volatile TopicManager topicManager;
+	private volatile EventBusServiceHandlerImpl handlerImpl;
 	private WatchTraceHandler watchTraceHandler;
 	private KafkaSubscriber.Session traceSession;
 
@@ -177,7 +185,6 @@ public class EventBusHandler implements Handler {
 
 		// Create the handler impl
 		handlerImpl = new EventBusServiceHandlerImpl(topicManager, publisher, subscriber);
-		watchTraceHandler = new WatchTraceHandler();
 
 		// Subscribe to the trace topic to dispatch events to WatchTrace streams
 		if (subscriber != null) {
@@ -214,15 +221,80 @@ public class EventBusHandler implements Handler {
 		}
 		// TraceSession: WatchTrace streaming (C2S, auth_disabled — trace_id is the credential).
 		services.add(watchTraceHandler.bindService());
-		if (publisher != null && subscriber != null && topicManager != null) {
-			// Typed Pub/Sub RPCs with request-id interceptor for JWT identity stamping.
-			ServerServiceDefinition typed = TypedEventBusBindings.bindAll(publisher, subscriber, topicManager);
-			ServerServiceDefinition intercepted = ServerInterceptors.intercept(
-					typed, Auth.requestIdInterceptor());
-			services.add(intercepted);
-		}
+		// Typed Pub/Sub RPCs — always register so the endpoints exist from startup.
+		// Kafka may not be initialized yet (it starts after TLS delivery), so each
+		// handler lambda checks at call time and returns UNAVAILABLE if not ready.
+		ServerServiceDefinition typed = buildLazyTypedBindings();
+		ServerServiceDefinition intercepted = ServerInterceptors.intercept(
+				typed, Auth.requestIdInterceptor());
+		services.add(intercepted);
 		return services;
 	}
+
+	/**
+	 * Builds typed Publish/Subscribe gRPC bindings that resolve Kafka clients
+	 * lazily at call time. Returns UNAVAILABLE before Kafka is initialized.
+	 */
+	private ServerServiceDefinition buildLazyTypedBindings() {
+		ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder("eventbus.EventBusTypedService");
+
+		svc.addMethod(TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<Eventbus.PublishResponse> resp) -> {
+					if (publisher == null || topicManager == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
+					}
+					return new PublishHandler<>(TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, publisher, topicManager, resp,
+						(msg, email) -> msg.toBuilder().setEmail(email).build());
+				}));
+
+		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<Claudesensor.SensorEvent> resp) -> {
+					if (subscriber == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
+					}
+					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, resp,
+						Claudesensor.SensorEvent::parseFrom);
+				}));
+
+		svc.addMethod(TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<Eventbus.PublishResponse> resp) -> {
+					if (publisher == null || topicManager == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
+					}
+					return new PublishHandler<>(TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, publisher, topicManager, resp,
+						null);
+				}));
+
+		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<Trace.TraceEvent> resp) -> {
+					if (subscriber == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
+					}
+					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, resp,
+						Trace.TraceEvent::parseFrom);
+				}));
+
+		return svc.build();
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T> StreamObserver<T> noOpObserver() {
+		return (StreamObserver<T>) NO_OP;
+	}
+
+	private static final StreamObserver<Object> NO_OP = new StreamObserver<>() {
+		@Override public void onNext(Object value) {}
+		@Override public void onError(Throwable t) {}
+		@Override public void onCompleted() {}
+	};
 
 	@Override
 	public void newTlsCert(X509.X509CertChain certChain, byte[] privateKeyDer) throws Exception {
