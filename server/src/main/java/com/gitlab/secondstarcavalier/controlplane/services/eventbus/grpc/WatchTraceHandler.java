@@ -1,9 +1,8 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
 package com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.TraceSessionGrpc;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -24,7 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * auth_disabled: true — the trace_id itself is the access credential.
  */
-public class WatchTraceHandler implements TraceSessionHandler {
+public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
 
     private static final Logger logger = LoggerFactory.getLogger(WatchTraceHandler.class);
 
@@ -46,8 +45,9 @@ public class WatchTraceHandler implements TraceSessionHandler {
         if (observer != null) {
             try {
                 // Assign monotonic seq for stable ordering within the trace session.
+                // Start at 1 — proto3 omits zero default values in JSON serialization.
                 int seq = traceSeqs.computeIfAbsent(traceId,
-                        k -> new java.util.concurrent.atomic.AtomicInteger(0)).getAndIncrement();
+                        k -> new java.util.concurrent.atomic.AtomicInteger(1)).getAndIncrement();
                 Trace.TraceEvent stamped = event.toBuilder().setSeq(seq).build();
                 synchronized (observer) {
                     observer.onNext(stamped);
@@ -61,7 +61,7 @@ public class WatchTraceHandler implements TraceSessionHandler {
     }
 
     @Override
-    public void watchTrace(Caller caller, StreamObserver<Trace.TraceEvent> responseObserver) {
+    public void watchTrace(Trace.TraceRequest request, StreamObserver<Trace.TraceEvent> responseObserver) {
         String traceId = UUID.randomUUID().toString();
 
         // Register cleanup on client disconnect

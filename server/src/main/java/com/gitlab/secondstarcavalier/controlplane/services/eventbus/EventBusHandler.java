@@ -24,38 +24,37 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicM
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TopicRegistry;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TypedEventBusBindings;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.WatchTraceHandler;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.EventbusStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Helpers;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.host.HostOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.key.KeyOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.kernel.MintGrpc;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.AdminGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.EventbusConfigStateServiceGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 
 import io.grpc.ManagedChannel;
 import io.grpc.Metadata;
 import io.grpc.ServerInterceptors;
 import io.grpc.ServerServiceDefinition;
+import io.grpc.Status;
 import io.grpc.stub.MetadataUtils;
+import io.grpc.stub.StreamObserver;
 
 /**
  * EventBusHandler implements the tacplus-generated Handler interface.
  *
  * Lifecycle:
- * 1. handleEventBusConfig() — validate config, start embedded Kafka, create clients
- * 2. getEventBusGrpcImpl() — returns the EventBusServiceHandler for control RPCs
- * 3. additionalServices() — registers typed Publish/Subscribe RPC bindings
- * 4. shutdown() — closes Kafka clients and broker
+ * 1. newTlsCert() — on first delivery, fetches eventbus config and starts Kafka
+ * 2. additionalServices() — registers Admin, TraceSession, and typed Pub/Sub RPCs
+ * 3. shutdown() — closes Kafka clients and broker
  */
 public class EventBusHandler implements Handler {
 
@@ -66,8 +65,9 @@ public class EventBusHandler implements Handler {
 
 	private final ServiceManager sm;
 	private final ScheduledExecutorService refreshScheduler;
+	private volatile boolean initialized = false;
 
-	// Initialized in handleEventBusConfig
+	// Initialized on first newTlsCert() delivery
 	private KafkaEmbeddedBroker broker;
 	private KafkaPublisher publisher;
 	private KafkaSubscriber subscriber;
@@ -78,6 +78,7 @@ public class EventBusHandler implements Handler {
 
 	public EventBusHandler(ServiceManager sm) {
 		this.sm = sm;
+		this.watchTraceHandler = new WatchTraceHandler();
 		this.refreshScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
 			Thread t = new Thread(r, "eventbus-state-refresh");
 			t.setDaemon(true);
@@ -85,13 +86,18 @@ public class EventBusHandler implements Handler {
 		});
 	}
 
-	@Override
-	public AdminHandler getAdminGrpcImpl() {
-		return handlerImpl;
-	}
-
-	@Override
-	public void handleAdminConfig(Eventbus.Config config) throws Exception {
+	/**
+	 * Fetch the eventbus Config from kernel and initialize Kafka.
+	 * Called once on first TLS cert delivery.
+	 */
+	private void initialize() throws Exception {
+		// Fetch eventbus-specific config from kernel's ConfigHolder.
+		String token = sm.getToken();
+		Metadata authHeaders = new Metadata();
+		authHeaders.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + token);
+		var configStub = EventbusConfigStateServiceGrpc.newBlockingStub(sm.conn())
+				.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders));
+		Eventbus.Config config = configStub.getConfig(Trace.TraceRequest.getDefaultInstance());
 		// Config already has defaults applied and env vars merged by ServiceManager.
 		Helpers.validateConfig(config);
 
@@ -197,18 +203,20 @@ public class EventBusHandler implements Handler {
 	@Override
 	public List<ServerServiceDefinition> additionalServices() {
 		List<ServerServiceDefinition> services = new ArrayList<>();
+		// Admin service: topic/consumer group management (S2S, any service may call).
+		// Auth enforced by the GrpcServer's Authorizer interceptor via mTLS.
+		if (handlerImpl != null) {
+			services.add(ServerInterceptors.intercept(
+					handlerImpl.bindService(), Auth.requestIdInterceptor()));
+		}
+		// TraceSession: WatchTrace streaming (C2S, auth_disabled — trace_id is the credential).
+		services.add(watchTraceHandler.bindService());
 		if (publisher != null && subscriber != null && topicManager != null) {
-			// Wrap typed RPCs with the request-id interceptor so that
-			// Auth.tokenPayloadFromContext() returns the decoded JWT payload.
-			// This enables PublishHandler to stamp identity claims from C2S tokens.
+			// Typed Pub/Sub RPCs with request-id interceptor for JWT identity stamping.
 			ServerServiceDefinition typed = TypedEventBusBindings.bindAll(publisher, subscriber, topicManager);
 			ServerServiceDefinition intercepted = ServerInterceptors.intercept(
 					typed, Auth.requestIdInterceptor());
 			services.add(intercepted);
-		}
-		// WatchTrace via generated TraceSession wrapper (auth_disabled: true)
-		if (watchTraceHandler != null) {
-			services.add(new TraceSession(watchTraceHandler).bindService());
 		}
 		return services;
 	}
@@ -217,6 +225,11 @@ public class EventBusHandler implements Handler {
 	public void newTlsCert(X509.X509CertChain certChain, byte[] privateKeyDer) throws Exception {
 		logger.info("Received new TLS certificate from kernel ({} certs in chain)",
 				certChain.getChainCount());
+		// Initialize Kafka on first cert delivery (config requires a valid token).
+		if (!initialized) {
+			initialized = true;
+			initialize();
+		}
 	}
 
 	@Override
@@ -239,7 +252,7 @@ public class EventBusHandler implements Handler {
 	// EventBusServiceHandler implementation
 	// -----------------------------------------------------------------------
 
-	private static class EventBusServiceHandlerImpl implements AdminHandler {
+	private static class EventBusServiceHandlerImpl extends AdminGrpc.AdminImplBase {
 
 		private final TopicManager topicManager;
 		private final KafkaPublisher publisher;
@@ -253,98 +266,145 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public Eventbus.ListTopicsResponse listTopics(Caller caller) throws ProtoException {
-			List<TopicManager.TopicInfo> topics = topicManager.listTopics();
-			Eventbus.ListTopicsResponse.Builder builder = Eventbus.ListTopicsResponse.newBuilder();
-			for (TopicManager.TopicInfo info : topics) {
-				builder.addTopics(toProto(info));
+		public void listTopics(Trace.TraceRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
+			try {
+				List<TopicManager.TopicInfo> topics = topicManager.listTopics();
+				Eventbus.ListTopicsResponse.Builder builder = Eventbus.ListTopicsResponse.newBuilder();
+				for (TopicManager.TopicInfo info : topics) {
+					builder.addTopics(toProto(info));
+				}
+				responseObserver.onNext(builder.build());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 			}
-			return builder.build();
 		}
 
 		@Override
-		public Eventbus.TopicInfo getTopicInfo(Caller caller, Eventbus.TopicInfoRequest request) throws ProtoException {
-			return toProto(topicManager.getTopicInfo(request.getTopic()));
-		}
-
-		@Override
-		public void deleteTopic(Caller caller, Eventbus.DeleteTopicRequest request) throws ProtoException {
-			topicManager.deleteTopic(request.getTopic());
-		}
-
-		@Override
-		public Eventbus.TopicInfo alterTopicConfig(Caller caller, Eventbus.AlterTopicConfigRequest request)
-				throws ProtoException {
-			TopicManager.TopicInfo info = topicManager.alterTopicConfig(
-					request.getTopic(), request.getRetentionMs(), request.getPartitionCount());
-			return toProto(info);
-		}
-
-		@Override
-		public Eventbus.ConsumerGroupInfo getConsumerGroupLag(Caller caller, Eventbus.ConsumerGroupRequest request)
-				throws ProtoException {
-			return toProto(topicManager.getConsumerGroupLag(request.getGroupId()));
-		}
-
-		@Override
-		public Eventbus.ListConsumerGroupsResponse listConsumerGroups(Caller caller) throws ProtoException {
-			List<TopicManager.ConsumerGroupInfo> groups = topicManager.listConsumerGroups();
-			Eventbus.ListConsumerGroupsResponse.Builder builder = Eventbus.ListConsumerGroupsResponse.newBuilder();
-			for (TopicManager.ConsumerGroupInfo info : groups) {
-				builder.addGroups(toProto(info));
+		public void getTopicInfo(Eventbus.TopicInfoRequest request, StreamObserver<Eventbus.TopicInfo> responseObserver) {
+			try {
+				responseObserver.onNext(toProto(topicManager.getTopicInfo(request.getTopic())));
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 			}
-			return builder.build();
 		}
 
 		@Override
-		public void resetConsumerGroupOffsets(Caller caller, Eventbus.ResetConsumerGroupOffsetsRequest request)
-				throws ProtoException {
-			KafkaSubscriber.SeekMode mode;
-			long value = 0;
-			switch (request.getResetToCase()) {
-				case OFFSET:
-					mode = KafkaSubscriber.SeekMode.OFFSET;
-					value = request.getOffset();
-					break;
-				case TIMESTAMP:
-					mode = KafkaSubscriber.SeekMode.TIMESTAMP;
-					var ts = request.getTimestamp();
-					value = ts.getSeconds() * 1000 + ts.getNanos() / 1_000_000;
-					break;
-				case TO_LATEST:
-					mode = KafkaSubscriber.SeekMode.LATEST;
-					break;
-				case TO_EARLIEST:
-					mode = KafkaSubscriber.SeekMode.EARLIEST;
-					break;
-				default:
-					throw new ProtoException(io.grpc.Status.INVALID_ARGUMENT.getCode().value(),
-							"reset_to is required");
+		public void deleteTopic(Eventbus.DeleteTopicRequest request, StreamObserver<com.google.protobuf.Empty> responseObserver) {
+			try {
+				topicManager.deleteTopic(request.getTopic());
+				responseObserver.onNext(com.google.protobuf.Empty.getDefaultInstance());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 			}
-			topicManager.resetConsumerGroupOffsets(
-					request.getGroupId(), request.getTopic(), mode, value);
 		}
 
 		@Override
-		public void deleteConsumerGroup(Caller caller, Eventbus.ConsumerGroupRequest request) throws ProtoException {
-			topicManager.deleteConsumerGroup(request.getGroupId());
-		}
-
-		@Override
-		public Eventbus.ClusterHealthResponse getClusterHealth(Caller caller) throws ProtoException {
-			TopicManager.ClusterHealth health = topicManager.getClusterHealth();
-			Eventbus.ClusterHealthResponse.Builder builder = Eventbus.ClusterHealthResponse.newBuilder()
-					.setBrokerCount(health.brokerCount())
-					.setControllerId(health.controllerId());
-			for (TopicManager.BrokerInfo bi : health.brokers()) {
-				builder.addBrokers(Eventbus.BrokerInfo.newBuilder()
-						.setId(bi.id())
-						.setHost(bi.host())
-						.setPort(bi.port())
-						.setIsController(bi.isController())
-						.build());
+		public void alterTopicConfig(Eventbus.AlterTopicConfigRequest request, StreamObserver<Eventbus.TopicInfo> responseObserver) {
+			try {
+				TopicManager.TopicInfo info = topicManager.alterTopicConfig(
+						request.getTopic(), request.getRetentionMs(), request.getPartitionCount());
+				responseObserver.onNext(toProto(info));
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
 			}
-			return builder.build();
+		}
+
+		@Override
+		public void getConsumerGroupLag(Eventbus.ConsumerGroupRequest request, StreamObserver<Eventbus.ConsumerGroupInfo> responseObserver) {
+			try {
+				responseObserver.onNext(toProto(topicManager.getConsumerGroupLag(request.getGroupId())));
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+			}
+		}
+
+		@Override
+		public void listConsumerGroups(Trace.TraceRequest request, StreamObserver<Eventbus.ListConsumerGroupsResponse> responseObserver) {
+			try {
+				List<TopicManager.ConsumerGroupInfo> groups = topicManager.listConsumerGroups();
+				Eventbus.ListConsumerGroupsResponse.Builder builder = Eventbus.ListConsumerGroupsResponse.newBuilder();
+				for (TopicManager.ConsumerGroupInfo info : groups) {
+					builder.addGroups(toProto(info));
+				}
+				responseObserver.onNext(builder.build());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+			}
+		}
+
+		@Override
+		public void resetConsumerGroupOffsets(Eventbus.ResetConsumerGroupOffsetsRequest request,
+				StreamObserver<com.google.protobuf.Empty> responseObserver) {
+			try {
+				KafkaSubscriber.SeekMode mode;
+				long value = 0;
+				switch (request.getResetToCase()) {
+					case OFFSET:
+						mode = KafkaSubscriber.SeekMode.OFFSET;
+						value = request.getOffset();
+						break;
+					case TIMESTAMP:
+						mode = KafkaSubscriber.SeekMode.TIMESTAMP;
+						var ts = request.getTimestamp();
+						value = ts.getSeconds() * 1000 + ts.getNanos() / 1_000_000;
+						break;
+					case TO_LATEST:
+						mode = KafkaSubscriber.SeekMode.LATEST;
+						break;
+					case TO_EARLIEST:
+						mode = KafkaSubscriber.SeekMode.EARLIEST;
+						break;
+					default:
+						responseObserver.onError(Status.INVALID_ARGUMENT
+								.withDescription("reset_to is required").asRuntimeException());
+						return;
+				}
+				topicManager.resetConsumerGroupOffsets(
+						request.getGroupId(), request.getTopic(), mode, value);
+				responseObserver.onNext(com.google.protobuf.Empty.getDefaultInstance());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+			}
+		}
+
+		@Override
+		public void deleteConsumerGroup(Eventbus.ConsumerGroupRequest request, StreamObserver<com.google.protobuf.Empty> responseObserver) {
+			try {
+				topicManager.deleteConsumerGroup(request.getGroupId());
+				responseObserver.onNext(com.google.protobuf.Empty.getDefaultInstance());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+			}
+		}
+
+		@Override
+		public void getClusterHealth(Trace.TraceRequest request, StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
+			try {
+				TopicManager.ClusterHealth health = topicManager.getClusterHealth();
+				Eventbus.ClusterHealthResponse.Builder builder = Eventbus.ClusterHealthResponse.newBuilder()
+						.setBrokerCount(health.brokerCount())
+						.setControllerId(health.controllerId());
+				for (TopicManager.BrokerInfo bi : health.brokers()) {
+					builder.addBrokers(Eventbus.BrokerInfo.newBuilder()
+							.setId(bi.id())
+							.setHost(bi.host())
+							.setPort(bi.port())
+							.setIsController(bi.isController())
+							.build());
+				}
+				responseObserver.onNext(builder.build());
+				responseObserver.onCompleted();
+			} catch (Exception e) {
+				responseObserver.onError(Status.INTERNAL.withDescription(e.getMessage()).asRuntimeException());
+			}
 		}
 
 		private static Eventbus.TopicInfo toProto(TopicManager.TopicInfo info) {
