@@ -14,6 +14,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Generic bidi-streaming publish handler for typed event-bus RPCs.
@@ -49,16 +51,33 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     private final StreamObserver<Eventbus.PublishResponse> responseObserver;
     private final Map<String, String> callerHeaders;
     private final IdentityStamper<T> stamper;
+    /** Extracts trace_id from an incoming message (field 200). Null = no tracing. */
+    private final Function<T, String> traceIdExtractor;
+    /** Called with the trace_id when a message with a non-empty trace_id is published.
+     *  Null for the trace topic to prevent trace-of-traces recursion. */
+    private final Consumer<String> traceDispatcher;
 
+    /** Backward-compatible constructor without trace support. */
     public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
                           TopicManager topicManager,
                           StreamObserver<Eventbus.PublishResponse> responseObserver,
                           IdentityStamper<T> stamper) {
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper, null, null);
+    }
+
+    public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
+                          TopicManager topicManager,
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper,
+                          Function<T, String> traceIdExtractor,
+                          Consumer<String> traceDispatcher) {
         this.kafkaTopic = kafkaTopic;
         this.publisher = publisher;
         this.responseObserver = responseObserver;
         this.callerHeaders = extractCallerClaims();
         this.stamper = stamper;
+        this.traceIdExtractor = traceIdExtractor;
+        this.traceDispatcher = traceDispatcher;
         topicManager.ensureTopicExists(kafkaTopic);
     }
 
@@ -103,6 +122,17 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
 
     @Override
     public void onNext(T message) {
+        // Extract and propagate trace_id from field 200 before stamping.
+        if (traceIdExtractor != null) {
+            String traceId = traceIdExtractor.apply(message);
+            if (traceId != null && !traceId.isEmpty()) {
+                callerHeaders.put("trace_id", traceId);
+                if (traceDispatcher != null) {
+                    traceDispatcher.accept(traceId);
+                }
+            }
+        }
+
         T stamped = message;
         if (stamper != null) {
             String email = callerHeaders.getOrDefault("caller.email", "");

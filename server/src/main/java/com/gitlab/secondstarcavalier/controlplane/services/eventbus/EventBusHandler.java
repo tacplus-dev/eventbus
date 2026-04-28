@@ -246,7 +246,17 @@ public class EventBusHandler implements Handler {
 						return noOpObserver();
 					}
 					return new PublishHandler<>(TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, publisher, topicManager, resp,
-						(msg, email) -> msg.toBuilder().setEmail(email).build());
+						(msg, email) -> msg.toBuilder().setEmail(email).build(),
+						Claudesensor.SensorEvent::getTraceId,
+						traceId -> watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
+							.setTraceId(traceId)
+							.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
+							.setRound(Trace.TraceRound.newBuilder()
+								.setService(SERVICE_NAME)
+								.setInstanceId(sm.getInstanceId())
+								.setTimestampMs(System.currentTimeMillis())
+								.build())
+							.build()));
 				}));
 
 		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
@@ -268,7 +278,7 @@ public class EventBusHandler implements Handler {
 						return noOpObserver();
 					}
 					return new PublishHandler<>(TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, publisher, topicManager, resp,
-						null);
+						null, null, null);
 				}));
 
 		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,

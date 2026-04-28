@@ -29,8 +29,6 @@ public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
 
     private final ConcurrentHashMap<String, StreamObserver<Trace.TraceEvent>> traceStreams =
             new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, java.util.concurrent.atomic.AtomicInteger> traceSeqs =
-            new ConcurrentHashMap<>();
 
     /**
      * Dispatches a trace event to the active WatchTrace stream matching the trace_id.
@@ -44,18 +42,12 @@ public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
         StreamObserver<Trace.TraceEvent> observer = traceStreams.get(traceId);
         if (observer != null) {
             try {
-                // Assign monotonic seq for stable ordering within the trace session.
-                // Start at 1 — proto3 omits zero default values in JSON serialization.
-                int seq = traceSeqs.computeIfAbsent(traceId,
-                        k -> new java.util.concurrent.atomic.AtomicInteger(1)).getAndIncrement();
-                Trace.TraceEvent stamped = event.toBuilder().setSeq(seq).build();
                 synchronized (observer) {
-                    observer.onNext(stamped);
+                    observer.onNext(event);
                 }
             } catch (Exception e) {
                 logger.debug("Trace stream {} send failed, removing", traceId, e);
                 traceStreams.remove(traceId);
-                traceSeqs.remove(traceId);
             }
         }
     }
@@ -70,7 +62,6 @@ public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
                     (ServerCallStreamObserver<Trace.TraceEvent>) responseObserver;
             serverObserver.setOnCancelHandler(() -> {
                 traceStreams.remove(traceId);
-                traceSeqs.remove(traceId);
                 logger.info("Trace stream {} closed (client cancelled)", traceId);
             });
         }
