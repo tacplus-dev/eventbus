@@ -3,7 +3,7 @@
 src_flag := if path_exists("../../proto") == "true" { "--src ../../proto" } else { "" }
 
 default:
-  tacplus build {{src_flag}} -- -DskipTests
+  tacplus build {{src_flag}} --no-container -- -DskipTests
 
 clean:
   rm -rf tacplus/target codegen/target server/target target

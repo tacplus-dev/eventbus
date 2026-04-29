@@ -140,12 +140,15 @@ public class KafkaSubscriber {
         public void run(SeekParams initial, RecordHandler handler) {
             try {
                 runLoop(initial, handler);
+            } catch (Exception e) {
+                logger.error("runLoop exited with exception on topic {}: {}", topic, e.toString(), e);
             } finally {
                 consumer.close();
             }
         }
 
         private void runLoop(SeekParams initial, RecordHandler handler) {
+            logger.info("runLoop starting: topic={}, mode={}, speed={}, pause={}", topic, initial.mode(), initial.speedMultiplier(), initial.pause());
             Set<TopicPartition> partitions = consumer.assignment();
             // Wait for partition assignment — the initial poll in createSession may not
             // have been long enough for group rebalancing to complete.
@@ -276,7 +279,13 @@ public class KafkaSubscriber {
                         return;
                     }
                 }
-                consumer.commitSync();
+                try {
+                    consumer.commitSync();
+                } catch (org.apache.kafka.clients.consumer.CommitFailedException e) {
+                    // Rebalance in progress — commit rejected. Continue without committing;
+                    // uncommitted offsets will be replayed after the rebalance completes.
+                    logger.warn("commitSync failed during rebalance on topic {}, continuing: {}", topic, e.getMessage());
+                }
             }
         }
     }

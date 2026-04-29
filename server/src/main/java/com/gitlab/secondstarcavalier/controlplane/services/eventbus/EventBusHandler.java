@@ -95,6 +95,16 @@ public class EventBusHandler implements Handler {
 	}
 
 	/**
+	 * Called by ServiceManager when an event arrives via the loopback subscription
+	 * to EventBus's own claudesensor event stream. No-op: trace dispatch for
+	 * INTERNAL_REQUEST events is already handled at publish time in buildLazyTypedBindings().
+	 */
+	@Override
+	public void onEventStream(byte[] event, Handler.SubscriptionMeta meta) {
+		// intentionally empty — trace dispatch happens at publish time
+	}
+
+	/**
 	 * Fetch the eventbus Config from kernel and initialize Kafka.
 	 * Called once on first TLS cert delivery.
 	 */
@@ -311,9 +321,11 @@ public class EventBusHandler implements Handler {
 		logger.info("Received new TLS certificate from kernel ({} certs in chain)",
 				certChain.getChainCount());
 		// Initialize Kafka on first cert delivery (config requires a valid token).
+		// Only set the flag after initialize() succeeds — if it throws, the next
+		// cert delivery will retry rather than leaving subscriber permanently null.
 		if (!initialized) {
-			initialized = true;
 			initialize();
+			initialized = true;
 		}
 	}
 
