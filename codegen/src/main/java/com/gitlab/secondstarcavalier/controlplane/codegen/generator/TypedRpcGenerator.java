@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.ArrayList;
 
 /**
  * Generates TypedEventBusBindings.java — programmatic gRPC MethodDescriptors
@@ -51,9 +52,14 @@ public class TypedRpcGenerator {
         sb.append("import com.google.protobuf.MessageLite;\n");
         sb.append("import io.grpc.MethodDescriptor;\n");
         sb.append("import io.grpc.ServerServiceDefinition;\n");
+        sb.append("import io.grpc.Status;\n");
         sb.append("import io.grpc.protobuf.ProtoUtils;\n");
         sb.append("import io.grpc.stub.ServerCalls;\n");
-        sb.append("import io.grpc.stub.StreamObserver;\n\n");
+        sb.append("import io.grpc.stub.StreamObserver;\n");
+        sb.append("import java.util.Arrays;\n");
+        sb.append("import java.util.HashSet;\n");
+        sb.append("import java.util.Set;\n");
+        sb.append("import java.util.function.Supplier;\n\n");
 
         // Hand-written service code (under service package, not tacplus)
         sb.append("import ").append(svcPkg).append(".kafka.KafkaPublisher;\n");
@@ -153,7 +159,88 @@ public class TypedRpcGenerator {
         }
 
         sb.append("        return svc.build();\n");
-        sb.append("    }\n");
+        sb.append("    }\n\n");
+
+        // addRemainingLazy method — lazy null-check version that skips specified descriptors.
+        // EventBusHandler calls this to auto-include any new topics without code changes.
+        sb.append("    /**\n");
+        sb.append("     * Adds lazy Publish/Subscribe bindings for all topics EXCEPT those whose\n");
+        sb.append("     * method descriptors appear in {@code skip}. Kafka clients are resolved\n");
+        sb.append("     * via suppliers at call time; returns UNAVAILABLE if not yet initialized.\n");
+        sb.append("     *\n");
+        sb.append("     * <p>Pass the descriptors for topics that need special handling\n");
+        sb.append("     * (e.g. trace dispatch) to exclude them from this auto-registration:\n");
+        sb.append("     * <pre>{@code\n");
+        sb.append("     *   TypedEventBusBindings.addRemainingLazy(svc,\n");
+        sb.append("     *       () -> publisher, () -> subscriber, () -> topicManager,\n");
+        sb.append("     *       PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,\n");
+        sb.append("     *       SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);\n");
+        sb.append("     * }</pre>\n");
+        sb.append("     */\n");
+        sb.append("    @SuppressWarnings(\"unchecked\")\n");
+        sb.append("    public static void addRemainingLazy(\n");
+        sb.append("            ServerServiceDefinition.Builder svc,\n");
+        sb.append("            Supplier<KafkaPublisher> publisher,\n");
+        sb.append("            Supplier<KafkaSubscriber> subscriber,\n");
+        sb.append("            Supplier<TopicManager> topicManager,\n");
+        sb.append("            MethodDescriptor<?, ?>... skip) {\n");
+        sb.append("        Set<MethodDescriptor<?, ?>> skipSet = new HashSet<>(Arrays.asList(skip));\n\n");
+
+        for (TopicField topic : topics) {
+            String rpcPrefix = topic.getStateName() + topic.getFieldPascal();
+            String constName = toConstName(rpcPrefix);
+            String qualifiedType = topic.getJavaQualifiedType();
+
+            sb.append("        // ").append(topic.getTopicName()).append("\n");
+            sb.append("        if (!skipSet.contains(PUBLISH_").append(constName).append(")) {\n");
+            sb.append("            svc.addMethod(PUBLISH_").append(constName).append(",\n");
+            sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
+            sb.append("                    (StreamObserver<Eventbus.PublishResponse> resp) -> {\n");
+            sb.append("                        KafkaPublisher pub = publisher.get();\n");
+            sb.append("                        TopicManager tm = topicManager.get();\n");
+            sb.append("                        if (pub == null || tm == null) {\n");
+            sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+            sb.append("                            return noOpObserver();\n");
+            sb.append("                        }\n");
+            sb.append("                        return new PublishHandler<>(TopicRegistry.TOPIC_").append(constName)
+              .append(", pub, tm, resp,\n");
+            if (topic.hasEmailField()) {
+                sb.append("                                (msg, email) -> msg.toBuilder().setEmail(email).build(),\n");
+            } else {
+                sb.append("                                null,\n");
+            }
+            sb.append("                                null, null);\n");
+            sb.append("                    }));\n");
+            sb.append("        }\n");
+
+            sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
+            sb.append("            svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
+            sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
+            sb.append("                    (StreamObserver<").append(qualifiedType).append("> resp) -> {\n");
+            sb.append("                        KafkaSubscriber sub = subscriber.get();\n");
+            sb.append("                        if (sub == null) {\n");
+            sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+            sb.append("                            return noOpObserver();\n");
+            sb.append("                        }\n");
+            sb.append("                        return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
+              .append(constName).append(", resp,\n");
+            sb.append("                                ").append(qualifiedType).append("::parseFrom);\n");
+            sb.append("                    }));\n");
+            sb.append("        }\n\n");
+        }
+
+        sb.append("    }\n\n");
+
+        // Private noOpObserver helper used by addRemainingLazy
+        sb.append("    @SuppressWarnings(\"unchecked\")\n");
+        sb.append("    private static <T> StreamObserver<T> noOpObserver() {\n");
+        sb.append("        return (StreamObserver<T>) NO_OP;\n");
+        sb.append("    }\n\n");
+        sb.append("    private static final StreamObserver<Object> NO_OP = new StreamObserver<>() {\n");
+        sb.append("        @Override public void onNext(Object v) {}\n");
+        sb.append("        @Override public void onError(Throwable t) {}\n");
+        sb.append("        @Override public void onCompleted() {}\n");
+        sb.append("    };\n");
         sb.append("}\n");
 
         Path outDir = outputDir.resolve("src/main/java")

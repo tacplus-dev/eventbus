@@ -105,6 +105,15 @@ public class EventBusHandler implements Handler {
 	}
 
 	/**
+	 * Fallback for any event-stream topics not explicitly overridden above.
+	 * EventBus does not store incoming events; this satisfies the Handler contract.
+	 * @Override added once tacplus regenerates Handler.java with handleEventStreamMessage().
+	 */
+	public void handleEventStreamMessage(String topic, byte[] event, Handler.SubscriptionMeta meta) {
+		// intentionally empty — EventBus does not consume its own event streams
+	}
+
+	/**
 	 * Fetch the eventbus Config from kernel and initialize Kafka.
 	 * Called once on first TLS cert delivery.
 	 */
@@ -301,6 +310,16 @@ public class EventBusHandler implements Handler {
 					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, resp,
 						Trace.TraceEvent::parseFrom);
 				}));
+
+		// All remaining topics (LLM, SCM, and any future sensors) are auto-registered
+		// by the codegen-managed addRemainingLazy(). New vservice sensors appear here
+		// automatically after codegen rebuild — no changes to EventBusHandler needed.
+		TypedEventBusBindings.addRemainingLazy(svc,
+			() -> publisher, () -> subscriber, () -> topicManager,
+			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS);
 
 		return svc.build();
 	}
