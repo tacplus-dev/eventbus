@@ -5,4 +5,4 @@ post-gen:
   - cmd: mvn
     args: [-pl, server, -am, -Dtacplus.skip=true, -Dmaven.test.skip=true, package]
 container:
-  image: registry.gitlab.com/secondstarcavalier/controlplane/services/eventbus/eventbus
+  image: registry.gitlab.com/secondstarcavalier/schematic/platform/services/eventbus/eventbus
