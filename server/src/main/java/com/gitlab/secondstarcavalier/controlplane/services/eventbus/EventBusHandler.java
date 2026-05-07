@@ -360,8 +360,22 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public void handleTraceSessionConfig(Eventbus.Config cfg) throws Exception {
+		// TraceSession has no runtime config; nothing to do.
+	}
+
+	@Override
 	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler getEventbusStateGrpcImpl() {
-		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler() {};
+		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler() {
+			@Override
+			public void watchQueryNodes(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryRequest request,
+					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryResponse> responseObserver)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				responseObserver.onCompleted();
+			}
+		};
 	}
 
 	@Override
