@@ -355,6 +355,25 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler getEventbusConfigStateGrpcImpl() {
+		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler() {
+			@Override
+			public Eventbus.Config getConfig(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller) throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				return Eventbus.Config.getDefaultInstance();
+			}
+			@Override
+			public Eventbus.Config setConfig(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller, Eventbus.Config request) throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				logger.info("setConfig: runtime config changes are not applied to a running broker");
+				return request;
+			}
+			@Override
+			public void watchConfig(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller, io.grpc.stub.StreamObserver<Eventbus.Config> responseObserver) throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				responseObserver.onCompleted();
+			}
+		};
+	}
+
+	@Override
 	public void shutdown() {
 		logger.info("Shutting down event-bus");
 		if (traceSession != null)
