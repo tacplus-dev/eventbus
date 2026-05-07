@@ -365,8 +365,7 @@ public class EventBusHandler implements Handler {
 						com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.UNAVAILABLE, "Kafka not yet initialized");
 			}
 			@Override
-			public Eventbus.ListTopicsResponse listTopics(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
-					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+			public Eventbus.ListTopicsResponse listTopics(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
 				try {
@@ -384,11 +383,11 @@ public class EventBusHandler implements Handler {
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public com.google.protobuf.Empty deleteTopic(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+			public void deleteTopic(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
 					Eventbus.DeleteTopicRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
-				try { topicManager.deleteTopic(request.getTopic()); return com.google.protobuf.Empty.getDefaultInstance(); }
+				try { topicManager.deleteTopic(request.getTopic()); }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
@@ -408,8 +407,7 @@ public class EventBusHandler implements Handler {
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.ListConsumerGroupsResponse listConsumerGroups(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
-					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+			public Eventbus.ListConsumerGroupsResponse listConsumerGroups(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
 				try {
@@ -419,7 +417,7 @@ public class EventBusHandler implements Handler {
 				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public com.google.protobuf.Empty resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+			public void resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
 					Eventbus.ResetConsumerGroupOffsetsRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
@@ -434,21 +432,19 @@ public class EventBusHandler implements Handler {
 						default -> throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INVALID_ARGUMENT, "reset_to is required");
 					}
 					topicManager.resetConsumerGroupOffsets(request.getGroupId(), request.getTopic(), mode, value);
-					return com.google.protobuf.Empty.getDefaultInstance();
 				} catch (com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException pe) { throw pe; }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public com.google.protobuf.Empty deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+			public void deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
 					Eventbus.ConsumerGroupRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
-				try { topicManager.deleteConsumerGroup(request.getGroupId()); return com.google.protobuf.Empty.getDefaultInstance(); }
+				try { topicManager.deleteConsumerGroup(request.getGroupId()); }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
-					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				checkReady();
 				try {
@@ -476,10 +472,11 @@ public class EventBusHandler implements Handler {
 			@Override
 			public void watchTrace(
 					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
-					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request,
 					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceEvent> responseObserver)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
-				watchTraceHandler.watchTrace(request, responseObserver);
+				watchTraceHandler.watchTrace(
+						com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest.getDefaultInstance(),
+						responseObserver);
 			}
 		};
 	}
@@ -493,6 +490,13 @@ public class EventBusHandler implements Handler {
 					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesEntriesResponse> responseObserver)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				responseObserver.onCompleted();
+			}
+			@Override
+			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.MapEmpty clearNodes(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesClearRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				return com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.MapEmpty.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesValueResponse putIfAbsentNodes(
