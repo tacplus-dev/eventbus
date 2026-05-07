@@ -238,8 +238,7 @@ public class EventBusHandler implements Handler {
 			services.add(ServerInterceptors.intercept(
 					handlerImpl.bindService(), Auth.requestIdInterceptor()));
 		}
-		// TraceSession: WatchTrace streaming (C2S, auth_disabled — trace_id is the credential).
-		services.add(watchTraceHandler.bindService());
+		// TraceSession is now managed by the tacplus ServiceManager via getTraceSessionGrpcImpl().
 		// Typed Pub/Sub RPCs — always register so the endpoints exist from startup.
 		// Kafka may not be initialized yet (it starts after TLS delivery), so each
 		// handler lambda checks at call time and returns UNAVAILABLE if not ready.
@@ -365,8 +364,20 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler getTraceSessionGrpcImpl() {
+		return (caller, request, responseObserver) -> watchTraceHandler.watchTrace(request, responseObserver);
+	}
+
+	@Override
 	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler getEventbusStateGrpcImpl() {
 		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler() {
+			@Override
+			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryResponse queryNodes(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				return com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryResponse.getDefaultInstance();
+			}
 			@Override
 			public void watchQueryNodes(
 					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
