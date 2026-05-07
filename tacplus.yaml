@@ -1,5 +1,5 @@
 language: java
-pkg: com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus
+pkg: com.gitlab.secondstarcavalier.controlplane.services.eventbus
 output-dir: tacplus/target/generated-sources
 post-gen:
   - cmd: mvn

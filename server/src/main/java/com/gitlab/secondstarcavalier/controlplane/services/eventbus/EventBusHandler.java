@@ -24,21 +24,21 @@ import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicM
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TopicRegistry;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.generated.TypedEventBusBindings;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.WatchTraceHandler;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Eventbus;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.EventbusStateServiceGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Helpers;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.host.HostOuterClass;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.key.KeyOuterClass;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.x509.X509;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.kernel.MintGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.servicemanager.Auth;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.s2sm.Handler;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.s2sm.ServiceManager;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.AdminGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.EventbusConfigStateServiceGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.trace.Trace;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.EventbusStateServiceGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Helpers;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.host.HostOuterClass;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.key.KeyOuterClass;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.x509.X509;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.kernel.MintGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.Handler;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.AdminGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.EventbusConfigStateServiceGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
 
 import io.grpc.ManagedChannel;
 import io.grpc.MethodDescriptor;
@@ -52,7 +52,7 @@ import io.grpc.stub.StreamObserver;
 
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.PublishHandler;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc.SubscribeHandler;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.vservices.claudesensor.Claudesensor;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.vservices.claudesensor.Claudesensor;
 
 /**
  * EventBusHandler implements the tacplus-generated Handler interface.

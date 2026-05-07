@@ -1,8 +1,8 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
 package com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc;
 
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.trace.Trace;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.TraceSessionGrpc;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace;
+import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.TraceSessionGrpc;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
