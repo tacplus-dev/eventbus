@@ -355,6 +355,16 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public void handleEventbusStateConfig(Eventbus.Config cfg) throws Exception {
+		// EventbusState has no config singleton; nothing to do.
+	}
+
+	@Override
+	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler getEventbusStateGrpcImpl() {
+		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler() {};
+	}
+
+	@Override
 	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler getEventbusConfigStateGrpcImpl() {
 		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler() {
 			@Override
