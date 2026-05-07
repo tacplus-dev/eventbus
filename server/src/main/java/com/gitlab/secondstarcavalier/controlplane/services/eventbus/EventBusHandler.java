@@ -349,6 +349,12 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public void handleEventbusConfigStateConfig(Eventbus.Config cfg) throws Exception {
+		// Config is applied once on startup via initialize(); runtime changes are not supported.
+		logger.info("handleEventbusConfigStateConfig: runtime config changes are not applied to a running broker");
+	}
+
+	@Override
 	public void shutdown() {
 		logger.info("Shutting down event-bus");
 		if (traceSession != null)
