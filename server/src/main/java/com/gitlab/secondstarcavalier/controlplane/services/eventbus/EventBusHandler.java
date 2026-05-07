@@ -232,13 +232,7 @@ public class EventBusHandler implements Handler {
 	@Override
 	public List<ServerServiceDefinition> additionalServices() {
 		List<ServerServiceDefinition> services = new ArrayList<>();
-		// Admin service: topic/consumer group management (S2S, any service may call).
-		// Auth enforced by the GrpcServer's Authorizer interceptor via mTLS.
-		if (handlerImpl != null) {
-			services.add(ServerInterceptors.intercept(
-					handlerImpl.bindService(), Auth.requestIdInterceptor()));
-		}
-		// TraceSession is now managed by the tacplus ServiceManager via getTraceSessionGrpcImpl().
+		// Admin and TraceSession are managed by the tacplus ServiceManager.
 		// Typed Pub/Sub RPCs — always register so the endpoints exist from startup.
 		// Kafka may not be initialized yet (it starts after TLS delivery), so each
 		// handler lambda checks at call time and returns UNAVAILABLE if not ready.
@@ -364,13 +358,130 @@ public class EventBusHandler implements Handler {
 	}
 
 	@Override
+	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler getAdminGrpcImpl() {
+		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler() {
+			private void checkReady() throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				if (topicManager == null) throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(
+						com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.UNAVAILABLE, "Kafka not yet initialized");
+			}
+			@Override
+			public Eventbus.ListTopicsResponse listTopics(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try {
+					Eventbus.ListTopicsResponse.Builder b = Eventbus.ListTopicsResponse.newBuilder();
+					for (TopicManager.TopicInfo info : topicManager.listTopics()) b.addTopics(toProto(info));
+					return b.build();
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public Eventbus.TopicInfo getTopicInfo(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.TopicInfoRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try { return toProto(topicManager.getTopicInfo(request.getTopic())); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public com.google.protobuf.Empty deleteTopic(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.DeleteTopicRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try { topicManager.deleteTopic(request.getTopic()); return com.google.protobuf.Empty.getDefaultInstance(); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public Eventbus.TopicInfo alterTopicConfig(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.AlterTopicConfigRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try { return toProto(topicManager.alterTopicConfig(request.getTopic(), request.getRetentionMs(), request.getPartitionCount())); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public Eventbus.ConsumerGroupInfo getConsumerGroupLag(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.ConsumerGroupRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try { return toProto(topicManager.getConsumerGroupLag(request.getGroupId())); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public Eventbus.ListConsumerGroupsResponse listConsumerGroups(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try {
+					Eventbus.ListConsumerGroupsResponse.Builder b = Eventbus.ListConsumerGroupsResponse.newBuilder();
+					for (TopicManager.ConsumerGroupInfo info : topicManager.listConsumerGroups()) b.addGroups(toProto(info));
+					return b.build();
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public com.google.protobuf.Empty resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.ResetConsumerGroupOffsetsRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try {
+					KafkaSubscriber.SeekMode mode;
+					long value = 0;
+					switch (request.getResetToCase()) {
+						case OFFSET -> { mode = KafkaSubscriber.SeekMode.OFFSET; value = request.getOffset(); }
+						case TIMESTAMP -> { mode = KafkaSubscriber.SeekMode.TIMESTAMP; var ts = request.getTimestamp(); value = ts.getSeconds() * 1000 + ts.getNanos() / 1_000_000; }
+						case TO_LATEST -> mode = KafkaSubscriber.SeekMode.LATEST;
+						case TO_EARLIEST -> mode = KafkaSubscriber.SeekMode.EARLIEST;
+						default -> throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INVALID_ARGUMENT, "reset_to is required");
+					}
+					topicManager.resetConsumerGroupOffsets(request.getGroupId(), request.getTopic(), mode, value);
+					return com.google.protobuf.Empty.getDefaultInstance();
+				} catch (com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException pe) { throw pe; }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public com.google.protobuf.Empty deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					Eventbus.ConsumerGroupRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try { topicManager.deleteConsumerGroup(request.getGroupId()); return com.google.protobuf.Empty.getDefaultInstance(); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+			@Override
+			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				checkReady();
+				try {
+					TopicManager.ClusterHealth health = topicManager.getClusterHealth();
+					Eventbus.ClusterHealthResponse.Builder builder = Eventbus.ClusterHealthResponse.newBuilder()
+							.setBrokerCount(health.brokerCount()).setControllerId(health.controllerId());
+					for (TopicManager.BrokerInfo bi : health.brokers()) {
+						builder.addBrokers(Eventbus.BrokerInfo.newBuilder().setId(bi.id()).setHost(bi.host())
+								.setPort(bi.port()).setIsController(bi.isController()).build());
+					}
+					return builder.build();
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+			}
+		};
+	}
+
+	@Override
 	public void handleTraceSessionConfig(Eventbus.Config cfg) throws Exception {
 		// TraceSession has no runtime config; nothing to do.
 	}
 
 	@Override
 	public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler getTraceSessionGrpcImpl() {
-		return (caller, request, responseObserver) -> watchTraceHandler.watchTrace(request, responseObserver);
+		return new com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler() {
+			@Override
+			public void watchTrace(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceRequest request,
+					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.trace.Trace.TraceEvent> responseObserver)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				watchTraceHandler.watchTrace(request, responseObserver);
+			}
+		};
 	}
 
 	@Override
@@ -382,6 +493,13 @@ public class EventBusHandler implements Handler {
 					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesEntriesResponse> responseObserver)
 					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
 				responseObserver.onCompleted();
+			}
+			@Override
+			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesValueResponse putIfAbsentNodes(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesPutRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				return com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesQueryResponse queryNodes(
@@ -434,6 +552,28 @@ public class EventBusHandler implements Handler {
 			topicManager.close();
 		if (broker != null)
 			broker.close();
+	}
+
+	// -----------------------------------------------------------------------
+	// Admin toProto helpers (used by getAdminGrpcImpl anonymous class)
+	// -----------------------------------------------------------------------
+
+	private static Eventbus.TopicInfo toProto(TopicManager.TopicInfo info) {
+		Eventbus.TopicInfo.Builder b = Eventbus.TopicInfo.newBuilder()
+				.setName(info.name()).setPartitionCount(info.partitionCount()).setRetentionMs(info.retentionMs());
+		info.earliestOffsets().forEach(b::putEarliestOffsets);
+		info.latestOffsets().forEach(b::putLatestOffsets);
+		return b.build();
+	}
+
+	private static Eventbus.ConsumerGroupInfo toProto(TopicManager.ConsumerGroupInfo info) {
+		Eventbus.ConsumerGroupInfo.Builder b = Eventbus.ConsumerGroupInfo.newBuilder()
+				.setGroupId(info.groupId()).setState(info.state()).setTotalLag(info.totalLag());
+		for (TopicManager.PartitionLag pl : info.partitionLags()) {
+			b.addPartitions(Eventbus.PartitionLag.newBuilder().setTopic(pl.topic()).setPartition(pl.partition())
+					.setCommittedOffset(pl.committedOffset()).setEndOffset(pl.endOffset()).setLag(pl.lag()).build());
+		}
+		return b.build();
 	}
 
 	// -----------------------------------------------------------------------
