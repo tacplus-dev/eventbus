@@ -499,6 +499,13 @@ public class EventBusHandler implements Handler {
 				return com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.MapEmpty.getDefaultInstance();
 			}
 			@Override
+			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesSizeResponse sizeNodes(
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesSizeRequest request)
+					throws com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.libs.errors.ProtoException {
+				return com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesSizeResponse.getDefaultInstance();
+			}
+			@Override
 			public com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesValueResponse putIfAbsentNodes(
 					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus.NodesPutRequest request)
