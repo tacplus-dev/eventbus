@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.codegen;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.codegen;
 
-import com.gitlab.secondstarcavalier.controlplane.codegen.generator.*;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.generator.*;
 
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;

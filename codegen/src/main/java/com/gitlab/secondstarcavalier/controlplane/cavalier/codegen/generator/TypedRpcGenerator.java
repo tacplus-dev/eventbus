@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.codegen.generator;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.generator;
 
-import com.gitlab.secondstarcavalier.controlplane.codegen.TopicDiscovery.TopicField;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.TopicDiscovery.TopicField;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.codegen.generator;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.generator;
 
-import com.gitlab.secondstarcavalier.controlplane.codegen.TopicDiscovery;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.TopicDiscovery;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

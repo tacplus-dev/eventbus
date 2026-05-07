@@ -1,5 +1,5 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka;
 
 import java.io.IOException;
 import java.nio.file.Files;

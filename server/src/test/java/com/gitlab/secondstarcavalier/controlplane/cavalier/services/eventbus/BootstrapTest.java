@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.services.eventbus;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaEmbeddedBroker;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.KafkaEmbeddedBroker;
 
 import org.junit.jupiter.api.Test;
 

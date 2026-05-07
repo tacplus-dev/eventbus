@@ -1,5 +1,5 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.codegen;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.codegen;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

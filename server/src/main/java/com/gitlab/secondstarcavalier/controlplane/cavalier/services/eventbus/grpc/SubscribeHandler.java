@@ -1,10 +1,10 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
-package com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc;
+package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaSubscriber;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaSubscriber.*;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.KafkaSubscriber;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.KafkaSubscriber.*;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Eventbus;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.MessageLite;
 import com.google.protobuf.Timestamp;
