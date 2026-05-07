@@ -3,9 +3,9 @@ package com.gitlab.secondstarcavalier.controlplane.services.eventbus.grpc;
 
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.KafkaPublisher;
 import com.gitlab.secondstarcavalier.controlplane.services.eventbus.kafka.TopicManager;
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.libs.servicemanager.Auth;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.servicemanager.Auth;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.types.services.eventbus.Eventbus;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Eventbus;
 import com.google.protobuf.MessageLite;
 import io.grpc.Status;
 import io.grpc.stub.StreamObserver;

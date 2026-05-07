@@ -1,7 +1,7 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
 package com.gitlab.secondstarcavalier.controlplane.services.eventbus;
 
-import com.gitlab.secondstarcavalier.controlplane.services.eventbus.tacplus.s2sm.ServiceManager;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.s2sm.ServiceManager;
 
 /**
  * Entry point for the event-bus service.
