@@ -1,7 +1,7 @@
 # EventBus Release Image
 # Layers the event-bus jar and eventbus binary onto a JRE base.
 
-FROM registry.gitlab.com/secondstarcavalier/schematic/containers/jre/schematic-jre-1-2:latest
+FROM registry.gitlab.com/secondstarcavalier/schematic/containers/jre/schematic-jre-1-3:latest
 
 ARG BUILD_DATE
 ARG VCS_REF
@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.title="EventBus" \
       org.opencontainers.image.description="Event bus service with embedded Kafka broker"
 
-RUN addgroup -S eventbus && adduser -S eventbus -G eventbus
+RUN groupadd -r eventbus && useradd -r -g eventbus eventbus
 
 COPY server/target/event-bus.jar /app/event-bus.jar
 COPY eventbus /usr/local/bin/eventbus
