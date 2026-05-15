@@ -67,6 +67,7 @@ build-arm64:
   extends: .build-arch
   tags:
     - br.aarch64
+    - br.x86
 
 .package-arch:
   stage: package
