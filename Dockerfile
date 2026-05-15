@@ -1,7 +1,12 @@
 # EventBus Release Image
-# Layers the event-bus jar and eventbus binary onto a JRE base.
+# Distroless Java 21 base with no shell.
+# The launcher binary reads LAUNCH_CMD and supervises the java process.
 
-FROM registry.gitlab.com/secondstarcavalier/schematic/containers/jre/schematic-jre-1-3:latest
+# Pre-create /var/lib/eventbus with correct ownership for nonroot (65532).
+FROM busybox AS setup
+RUN mkdir -p /var/lib/eventbus/data
+
+FROM gcr.io/distroless/java21-debian12
 
 ARG BUILD_DATE
 ARG VCS_REF
@@ -15,15 +20,15 @@ LABEL org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.title="EventBus" \
       org.opencontainers.image.description="Event bus service with embedded Kafka broker"
 
-RUN groupadd -r eventbus && useradd -r -g eventbus eventbus
-
+COPY --from=setup --chown=65532:65532 /var/lib/eventbus /var/lib/eventbus
 COPY server/target/event-bus.jar /app/event-bus.jar
-COPY eventbus /usr/local/bin/eventbus
-RUN chmod +x /usr/local/bin/eventbus \
-    && mkdir -p /var/lib/eventbus/data \
-    && chown -R eventbus:eventbus /var/lib/eventbus
 
-USER eventbus
+ARG TARGETARCH
+COPY launcher-linux-${TARGETARCH} /usr/local/bin/eventbus
+
+USER nonroot
+
+ENV LAUNCH_CMD="java -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -Djava.awt.headless=true -jar /app/event-bus.jar"
 
 VOLUME /var/lib/eventbus/data
 
