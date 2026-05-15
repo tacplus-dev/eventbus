@@ -106,8 +106,6 @@ manifest:
   image: docker:latest
   services:
     - docker:dind
-  tags:
-    - br.aarch64
   needs:
     - package-arm64
   rules:
