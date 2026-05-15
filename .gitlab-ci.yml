@@ -66,7 +66,7 @@ variables:
 build-arm64:
   extends: .build-arch
   tags:
-    - br.aarch64
+    - schematic-aarch64
     - br.x86
 
 .package-arch:
@@ -103,7 +103,7 @@ build-arm64:
 package-arm64:
   extends: .package-arch
   tags:
-    - saas-linux-large-arm64
+    - schematic-aarch64
   needs:
     - build-arm64
   variables:
