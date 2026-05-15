@@ -94,7 +94,7 @@ build-arm64:
 package-arm64:
   extends: .package-arch
   tags:
-    - br.aarch64
+    - saas-linux-large-arm64
   needs:
     - build-arm64
   variables:
