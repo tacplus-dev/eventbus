@@ -106,6 +106,7 @@ package-arm64:
     - schematic-aarch64
   needs:
     - build-arm64
+    - compute-image
   variables:
     ARCH: arm64
 
