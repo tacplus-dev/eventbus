@@ -29,6 +29,7 @@ COPY launcher-linux-${TARGETARCH} /usr/local/bin/eventbus
 USER nonroot
 
 ENV LAUNCH_CMD="java -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -Djava.awt.headless=true -jar /app/event-bus.jar"
+ENV HEALTH_PORT=8443
 
 VOLUME /var/lib/eventbus/data
 
