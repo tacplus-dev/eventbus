@@ -83,6 +83,7 @@ public class EventBusHandler implements Handler {
 	private volatile EventBusServiceHandlerImpl handlerImpl;
 	private WatchTraceHandler watchTraceHandler;
 	private KafkaSubscriber.Session traceSession;
+	private volatile Thread traceDispatchThread;
 
 	public EventBusHandler(ServiceManager sm) {
 		this.sm = sm;
@@ -212,7 +213,7 @@ public class EventBusHandler implements Handler {
 					KafkaSubscriber.SeekMode.LATEST, 0, 0, "eventbus-trace-dispatch",
 					false, KafkaSubscriber.BackpressurePolicy.BUFFER, 1, List.of());
 			traceSession = subscriber.createSession(traceTopic, seekParams);
-			Thread traceThread = new Thread(() -> traceSession.run(seekParams, record -> {
+			traceDispatchThread = new Thread(() -> traceSession.run(seekParams, record -> {
 				try {
 					Trace.TraceEvent event = Trace.TraceEvent.parseFrom(record.value());
 					watchTraceHandler.dispatch(event);
@@ -221,8 +222,8 @@ public class EventBusHandler implements Handler {
 				}
 				return true;
 			}), "eventbus-trace-dispatch");
-			traceThread.setDaemon(true);
-			traceThread.start();
+			traceDispatchThread.setDaemon(true);
+			traceDispatchThread.start();
 			logger.info("Trace dispatch consumer started on topic {}", traceTopic);
 		}
 
@@ -608,6 +609,9 @@ public class EventBusHandler implements Handler {
 	@Override
 	public void shutdown() {
 		logger.info("Shutting down event-bus");
+		if (traceDispatchThread != null) {
+			traceDispatchThread.interrupt();
+		}
 		if (traceSession != null)
 			traceSession.close();
 		if (watchTraceHandler != null)

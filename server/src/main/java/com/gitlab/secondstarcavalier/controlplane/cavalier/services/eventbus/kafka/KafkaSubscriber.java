@@ -218,11 +218,13 @@ public class KafkaSubscriber {
                 // DROP_OLD: if we got a full batch, the client may be behind.
                 // Skip to end so the next poll gets only the latest events.
                 if (backpressure == BackpressurePolicy.DROP_OLD && records.count() >= 500) {
-                    logger.info("DROP_OLD: client behind, seeking to end on topic {}", topic);
-                    consumer.seekToEnd(partitions);
-                    // Force a position fetch so the next poll starts from the end.
-                    for (TopicPartition tp : partitions) {
-                        consumer.position(tp);
+                    if (!partitions.isEmpty()) {
+                        logger.info("DROP_OLD: client behind, seeking to end on topic {}", topic);
+                        consumer.seekToEnd(partitions);
+                        // Force a position fetch so the next poll starts from the end.
+                        for (TopicPartition tp : partitions) {
+                            consumer.position(tp);
+                        }
                     }
                     continue;
                 }
@@ -282,9 +284,12 @@ public class KafkaSubscriber {
                 try {
                     consumer.commitSync();
                 } catch (org.apache.kafka.clients.consumer.CommitFailedException e) {
-                    // Rebalance in progress — commit rejected. Continue without committing;
-                    // uncommitted offsets will be replayed after the rebalance completes.
-                    logger.warn("commitSync failed during rebalance on topic {}, continuing: {}", topic, e.getMessage());
+                    if (e.getMessage() != null && e.getMessage().contains("rebalance")) {
+                        logger.warn("commitSync failed during rebalance on topic {}, continuing: {}", topic, e.getMessage());
+                    } else {
+                        logger.error("commitSync failed (non-rebalance) on topic {}: {}", topic, e.getMessage(), e);
+                        throw e;
+                    }
                 }
             }
         }

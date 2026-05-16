@@ -1,6 +1,9 @@
 // Copyright (c) 2024 Second Star Cavalier, LLC.
 package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.KafkaPublisher;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.TopicManager;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.servicemanager.Auth;
@@ -101,23 +104,17 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     }
 
     /**
-     * Minimal JSON field extractor for flat JWT payloads.
-     * Handles string and numeric values.
+     * Extracts a JSON field using Gson for correctness with nested/escaped values.
      */
     private static String extractJsonField(String json, String key) {
-        String needle = "\"" + key + "\"";
-        int idx = json.indexOf(needle);
-        if (idx < 0) return null;
-        String rest = json.substring(idx + needle.length()).stripLeading();
-        if (!rest.startsWith(":")) return null;
-        rest = rest.substring(1).stripLeading();
-        if (rest.startsWith("\"")) {
-            int end = rest.indexOf('"', 1);
-            return end > 0 ? rest.substring(1, end) : null;
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            JsonElement field = obj.get(key);
+            if (field == null || field.isJsonNull()) return null;
+            return field.isJsonPrimitive() ? field.getAsString() : field.toString();
+        } catch (Exception e) {
+            return null;
         }
-        int end = 0;
-        while (end < rest.length() && (Character.isDigit(rest.charAt(end)) || rest.charAt(end) == '.')) end++;
-        return end > 0 ? rest.substring(0, end) : null;
     }
 
     @Override
@@ -126,7 +123,9 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         if (traceIdExtractor != null) {
             String traceId = traceIdExtractor.apply(message);
             if (traceId != null && !traceId.isEmpty()) {
-                callerHeaders.put("trace_id", traceId);
+                synchronized (callerHeaders) {
+                    callerHeaders.put("trace_id", traceId);
+                }
                 if (traceDispatcher != null) {
                     traceDispatcher.accept(traceId);
                 }

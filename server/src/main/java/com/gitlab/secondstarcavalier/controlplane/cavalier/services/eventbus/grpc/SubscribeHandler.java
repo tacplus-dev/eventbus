@@ -14,6 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Generic bidi-streaming subscribe handler for typed event-bus RPCs.
@@ -35,12 +38,15 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		T parse(byte[] data) throws InvalidProtocolBufferException;
 	}
 
+	private static final ExecutorService SUBSCRIBE_EXECUTOR =
+			Executors.newVirtualThreadPerTaskExecutor();
+
 	private final KafkaSubscriber subscriber;
 	private final String kafkaTopic;
 	private final StreamObserver<T> responseObserver;
 	private final ProtoParser<T> parser;
 	private volatile Session session;
-	private boolean firstMessage = true;
+	private final AtomicBoolean firstMessage = new AtomicBoolean(true);
 
 	public SubscribeHandler(KafkaSubscriber subscriber, String kafkaTopic,
 			StreamObserver<T> responseObserver, ProtoParser<T> parser) {
@@ -54,14 +60,11 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 	public void onNext(Eventbus.SubscribeRequest request) {
 		SeekParams params = toSeekParams(request);
 
-		if (firstMessage) {
-			firstMessage = false;
+		if (firstMessage.compareAndSet(true, false)) {
 			Session s = subscriber.createSession(kafkaTopic, params);
 			this.session = s;
 
-			// AGENT : TODO : why are we not using a thread executor pool here?
-
-			Thread.startVirtualThread(() -> {
+			SUBSCRIBE_EXECUTOR.submit(() -> {
 				try {
 					s.run(params, record -> {
 						try {
