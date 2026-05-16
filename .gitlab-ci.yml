@@ -21,6 +21,8 @@ compute-image:
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
   TACPLUS_PROJECT_PATH: "secondstarcavalier/schematic/tacplus"
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: tcp://docker:2375
 
 .parse-version: &parse-version
   - |
