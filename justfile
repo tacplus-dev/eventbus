@@ -1,28 +1,24 @@
 # Local development builds only — not used in CI/CD.
 
-proto-sync:
+TACPLUS_IMAGE := "registry.gitlab.com/secondstarcavalier/schematic/tacplus/tacplus-1-2:latest"
+
+default: generate
+
+generate:
   #!/usr/bin/env bash
   set -euo pipefail
-  if [ -L proto ]; then
-    : # symlink — user-managed, skip sync
-  elif [ -d proto ]; then
+  if [ -d proto ]; then
     git -C proto fetch --quiet
     git -C proto reset --hard --quiet origin/HEAD
   else
     git clone --quiet https://gitlab.com/secondstarcavalier/schematic/platform/proto.git proto
   fi
-
-default: proto-sync
-  #!/usr/bin/env bash
-  set -euo pipefail
-  if [ -L proto ]; then
-    PROTO_TMP=$(mktemp -d)
-    trap 'rm -rf "$PROTO_TMP"' EXIT
-    cp -rL "$(readlink -f proto)/." "$PROTO_TMP/"
-    tacplus build --src "$PROTO_TMP" -- -DskipTests
-  else
-    tacplus build --src proto -- -DskipTests
-  fi
+  docker pull "{{TACPLUS_IMAGE}}" --quiet
+  docker run --rm \
+    -v "$PWD:/work" \
+    -w /work \
+    "{{TACPLUS_IMAGE}}" \
+    tacplus build --src proto
 
 clean:
   rm -rf tacplus/target codegen/target server/target target

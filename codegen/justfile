@@ -1,6 +1,6 @@
 # Build eventbus codegen maven plugin.
 
-tacplus_image := "registry.gitlab.com/secondstarcavalier/controlplane/utils/tacplus/tacplus-1-1:latest"
+TACPLUS_IMAGE := "registry.gitlab.com/secondstarcavalier/schematic/tacplus/tacplus-1-2:latest"
 
 default: build
 
@@ -11,5 +11,5 @@ build:
     -v "$(cd .. && pwd)":/workspace \
     -v "${HOME}/.m2:/root/.m2" \
     -w /workspace \
-    {{tacplus_image}} \
+    "{{TACPLUS_IMAGE}}" \
     mvn -pl codegen -am package -DskipTests
