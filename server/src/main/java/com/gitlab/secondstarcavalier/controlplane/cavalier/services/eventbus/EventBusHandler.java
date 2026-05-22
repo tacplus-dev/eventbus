@@ -32,6 +32,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tac
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.kernel.MintGrpc;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.MetaData;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.s2sm.Handler;
@@ -65,7 +66,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tac
 public class EventBusHandler implements Handler {
 
 	private static final Logger logger = LoggerFactory.getLogger(EventBusHandler.class);
-	private static final String SERVICE_NAME = "eventbus";
+	private static final String SERVICE_NAME = MetaData.PROJECT_NAME;
 	private static final long LEAF_CERT_LIFETIME_SECONDS = 24L * 3600;
 	private static final long CERT_RENEWAL_SECONDS = 20L * 3600;
 
