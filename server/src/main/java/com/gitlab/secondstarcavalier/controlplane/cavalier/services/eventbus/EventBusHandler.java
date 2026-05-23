@@ -69,10 +69,12 @@ public class EventBusHandler implements Handler {
 	private static final String SERVICE_NAME = MetaData.PROJECT_NAME;
 	private static final long LEAF_CERT_LIFETIME_SECONDS = 24L * 3600;
 	private static final long CERT_RENEWAL_SECONDS = 20L * 3600;
+	private static final long[] INIT_RETRY_DELAYS_MS = {2000, 4000, 8000, 16000, 30000};
 
 	private final ServiceManager sm;
 	private final ScheduledExecutorService refreshScheduler;
 	private volatile boolean initialized = false;
+	private volatile boolean initStarted = false;
 
 	// Initialized on first newTlsCert() delivery.
 	// Volatile so additionalServices() (called before newTlsCert) can
@@ -335,11 +337,41 @@ public class EventBusHandler implements Handler {
 		logger.info("Received new TLS certificate from kernel ({} certs in chain)",
 				certChain.getChainCount());
 		// Initialize Kafka on first cert delivery (config requires a valid token).
-		// Only set the flag after initialize() succeeds — if it throws, the next
-		// cert delivery will retry rather than leaving subscriber permanently null.
-		if (!initialized) {
-			initialize();
-			initialized = true;
+		// Runs in a background thread with retry so we don't block the TLS callback.
+		if (!initStarted) {
+			initStarted = true;
+			Thread initThread = new Thread(() -> initializeWithRetry(), "eventbus-init-retry");
+			initThread.setDaemon(true);
+			initThread.start();
+		}
+	}
+
+	/**
+	 * Attempts initialize() with exponential backoff: 2s, 4s, 8s, 16s, 30s (max).
+	 * Retries indefinitely at the max delay until success.
+	 */
+	private void initializeWithRetry() {
+		int attempt = 0;
+		while (!initialized) {
+			try {
+				initialize();
+				initialized = true;
+				if (attempt > 0) {
+					logger.info("EventBus initialization succeeded after {} retries", attempt);
+				}
+			} catch (Exception e) {
+				long delayMs = INIT_RETRY_DELAYS_MS[Math.min(attempt, INIT_RETRY_DELAYS_MS.length - 1)];
+				logger.error("EventBus initialization failed (attempt {}, retrying in {}ms): {}",
+						attempt + 1, delayMs, e.getMessage());
+				attempt++;
+				try {
+					Thread.sleep(delayMs);
+				} catch (InterruptedException ie) {
+					Thread.currentThread().interrupt();
+					logger.error("EventBus initialization retry interrupted, giving up");
+					return;
+				}
+			}
 		}
 	}
 
