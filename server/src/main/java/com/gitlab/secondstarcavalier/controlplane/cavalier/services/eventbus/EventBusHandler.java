@@ -2,14 +2,9 @@
 package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus;
 
 import java.nio.file.Path;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.time.Instant;
+import java.security.PrivateKey;
 import java.util.ArrayList;
-import java.util.Base64;
-
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -28,10 +23,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tac
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.EventbusStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Helpers;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.host.HostOuterClass;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.key.KeyOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.x509.X509;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.common.tokenrequest.Tokenrequest;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.kernel.MintGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.MetaData;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.libs.x509.ImmutableCertChain;
@@ -67,8 +59,6 @@ public class EventBusHandler implements Handler {
 
 	private static final Logger logger = LoggerFactory.getLogger(EventBusHandler.class);
 	private static final String SERVICE_NAME = MetaData.PROJECT_NAME;
-	private static final long LEAF_CERT_LIFETIME_SECONDS = 24L * 3600;
-	private static final long CERT_RENEWAL_SECONDS = 20L * 3600;
 	private static final long[] INIT_RETRY_DELAYS_MS = {2000, 4000, 8000, 16000, 30000};
 
 	private final ServiceManager sm;
@@ -164,9 +154,12 @@ public class EventBusHandler implements Handler {
 
 		logger.info("Starting event-bus: role={}, nodeId={}, dataDir={}", role, nodeId, dataDir);
 
-		// Inter-node mTLS
-		ManagedChannel kernelChan = sm.conn();
-		KafkaEmbeddedBroker.TlsConfig tls = obtainInterNodeTls(kernelChan, hostname);
+		// Inter-node mTLS: read the auto-TLS cert delivered by kernel's
+		// TlsCertService.ManageCert bidi stream (managed by the tacplus SM).
+		// The SM blocks in create() until the first cert lands, so by the time
+		// initialize() runs the cert is available via sm.getTlsCertChain().
+		// Renewals arrive via handler.newTlsCert() — see updateInterNodeTls below.
+		KafkaEmbeddedBroker.TlsConfig tls = buildInterNodeTls(sm.getTlsCertChain(), sm.getTlsPrivateKey());
 		logger.info("Inter-node mTLS enabled with {} DNS SAN (hostname={})", SERVICE_NAME, hostname);
 
 		// Peer discovery
@@ -184,16 +177,10 @@ public class EventBusHandler implements Handler {
 				hostname, brokerPort, controllerPort,
 				voters, clusterId, defaults, tls);
 
-		// TLS cert renewal at half-life
-		refreshScheduler.scheduleAtFixedRate(() -> {
-			try {
-				KafkaEmbeddedBroker.TlsConfig renewed = obtainInterNodeTls(sm.conn(), hostname);
-				broker.updateTls(renewed);
-				logger.info("Inter-node TLS cert renewed");
-			} catch (Exception e) {
-				logger.error("Failed to renew inter-node TLS cert: {}", e.getMessage());
-			}
-		}, CERT_RENEWAL_SECONDS, CERT_RENEWAL_SECONDS, TimeUnit.SECONDS);
+		// Cert renewal handled by the SM's auto-TLS bidi stream — the SM
+		// invokes handler.newTlsCert(...) (see below) whenever kernel delivers
+		// a renewed certificate, and that callback updates the Kafka broker.
+		// No local scheduler needed.
 
 		// Kafka clients (broker/combined only)
 		if (role.isBroker()) {
@@ -334,15 +321,32 @@ public class EventBusHandler implements Handler {
 
 	@Override
 	public void newTlsCert(X509.X509CertChain certChain, byte[] privateKeyDer) throws Exception {
-		logger.info("Received new TLS certificate from kernel ({} certs in chain)",
+		logger.info("Received TLS certificate from kernel ({} certs in chain)",
 				certChain.getChainCount());
-		// Initialize Kafka on first cert delivery (config requires a valid token).
-		// Runs in a background thread with retry so we don't block the TLS callback.
+		// First delivery — kick off Kafka initialization (which reads the cert
+		// from sm.getTlsCertChain()). Runs in a background thread with retry so
+		// we don't block the TLS callback.
 		if (!initStarted) {
 			initStarted = true;
 			Thread initThread = new Thread(() -> initializeWithRetry(), "eventbus-init-retry");
 			initThread.setDaemon(true);
 			initThread.start();
+			return;
+		}
+		// Subsequent deliveries are renewals — push the new cert to the broker.
+		if (broker != null) {
+			try {
+				PrivateKey pk = sm.getTlsPrivateKey();
+				if (pk == null) {
+					logger.warn("Renewed TLS cert delivered but SM private key is null — skipping broker update");
+					return;
+				}
+				KafkaEmbeddedBroker.TlsConfig renewed = buildInterNodeTls(certChain, pk);
+				broker.updateTls(renewed);
+				logger.info("Inter-node TLS cert renewed");
+			} catch (Exception e) {
+				logger.error("Failed to apply renewed inter-node TLS cert: {}", e.getMessage());
+			}
 		}
 	}
 
@@ -871,54 +875,23 @@ public class EventBusHandler implements Handler {
 	// Inter-node mTLS
 	// -----------------------------------------------------------------------
 
-	private KafkaEmbeddedBroker.TlsConfig obtainInterNodeTls(ManagedChannel channel, String hostname) throws Exception {
-		// Kafka's SSL implementation does not support Ed25519 keys — use EC P-384.
-		KeyPairGenerator kpg = KeyPairGenerator.getInstance("EC");
-		kpg.initialize(new java.security.spec.ECGenParameterSpec("secp384r1"));
-		KeyPair keyPair = kpg.generateKeyPair();
-
-		byte[] pubKeyBytes = keyPair.getPublic().getEncoded();
-		String pubKeyBase64 = Base64.getUrlEncoder().withoutPadding().encodeToString(pubKeyBytes);
-		String keyId = UUID.randomUUID().toString();
-
-		long now = Instant.now().getEpochSecond();
-		long exp = now + LEAF_CERT_LIFETIME_SECONDS;
-
-		X509.X509CertRequest.Builder certReq = X509.X509CertRequest.newBuilder()
-						.setKey(KeyOuterClass.PublicKey.newBuilder()
-								.setId(keyId)
-								.setBase64(pubKeyBase64)
-								.build())
-						.setExp(exp)
-						.setIssuer(SERVICE_NAME)
-						.setKeyUsage(X509.X509KeyUsage.X509_KEY_USAGE_DIGITAL_SIGNATURE)
-						.addExtKeyUsage(X509.X509ExtKeyUsage.X509_EXT_KEY_USAGE_SERVER_AUTH)
-						.addExtKeyUsage(X509.X509ExtKeyUsage.X509_EXT_KEY_USAGE_CLIENT_AUTH)
-						.addDnsNames(SERVICE_NAME)
-						.addDnsNames("*." + SERVICE_NAME)
-						.addDnsNames("localhost");
-		if (!hostname.equals(SERVICE_NAME) && !hostname.equals("localhost")) {
-			certReq.addDnsNames(hostname);
+	/**
+	 * Builds a Kafka TLS config from the cert chain + private key already
+	 * delivered to this service via the SM's auto-TLS bidi stream. The
+	 * private key matches the chain (both are generated by the SM, signed
+	 * by kernel). Kafka requires EC P-256 or RSA — eventbus.proto declares
+	 * {@code auto_tls: TLS_KEY_TYPE_ECDSA} which yields a P-256 key.
+	 */
+	private KafkaEmbeddedBroker.TlsConfig buildInterNodeTls(
+			X509.X509CertChain certChain, PrivateKey privateKey) {
+		if (certChain == null || privateKey == null) {
+			throw new IllegalStateException(
+					"buildInterNodeTls called before SM auto-TLS delivered a certificate");
 		}
-
-		Tokenrequest.X509MintRequest request = Tokenrequest.X509MintRequest.newBuilder()
-				.setAud(SERVICE_NAME)
-				.setCertRequest(certReq.build())
-				.build();
-
-		String token = sm.getToken();
-		Metadata headers = new Metadata();
-		headers.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER),
-				"Bearer " + token);
-		MintGrpc.MintBlockingStub stub = MintGrpc.newBlockingStub(channel)
-				.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(headers));
-
-		X509.X509CertChain certChain = stub.x509Mint(request);
-
-		ImmutableCertChain chain = ImmutableCertChain.from(certChain, keyPair.getPrivate());
+		ImmutableCertChain chain = ImmutableCertChain.from(certChain, privateKey);
 		return new KafkaEmbeddedBroker.TlsConfig(
 				chain.certChainPem(),
-				ImmutableCertChain.privateKeyPem(keyPair.getPrivate()),
+				ImmutableCertChain.privateKeyPem(privateKey),
 				chain.caCertsPem());
 	}
 
