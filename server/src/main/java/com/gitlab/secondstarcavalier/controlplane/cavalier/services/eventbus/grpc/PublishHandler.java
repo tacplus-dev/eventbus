@@ -17,6 +17,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -59,6 +61,18 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     /** Called with the trace_id when a message with a non-empty trace_id is published.
      *  Null for the trace topic to prevent trace-of-traces recursion. */
     private final Consumer<String> traceDispatcher;
+
+    /** Outstanding publish futures whose responses have not been written yet. */
+    private final AtomicInteger inFlight = new AtomicInteger();
+    /** Set when the client has called onCompleted (half-closed). The response
+     *  stream is only closed once this is true AND inFlight == 0, so we never
+     *  acknowledge a stream before Kafka has acked all in-flight publishes. */
+    private final AtomicBoolean clientCompleted = new AtomicBoolean(false);
+    /** Set once a terminal method (onCompleted/onError) has been invoked on
+     *  responseObserver. Guards against the gRPC contract violation of
+     *  invoking two terminal methods, e.g. when a later publish completes
+     *  successfully after an earlier one errored. */
+    private final AtomicBoolean terminated = new AtomicBoolean(false);
 
     /** Backward-compatible constructor without trace support. */
     public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
@@ -140,21 +154,56 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
             }
         }
         byte[] bytes = stamped.toByteArray();
-        publisher.publish(kafkaTopic, null, callerHeaders, bytes)
+        inFlight.incrementAndGet();
+        java.util.concurrent.CompletableFuture<org.apache.kafka.clients.producer.RecordMetadata> pub;
+        try {
+            pub = publisher.publish(kafkaTopic, null, callerHeaders, bytes);
+        } catch (Throwable t) {
+            // Defense in depth — KafkaPublisher.publish already wraps producer.send,
+            // but if anything throws before the future is returned the inFlight
+            // counter would leak. Surface as an UNAVAILABLE error.
+            inFlight.decrementAndGet();
+            logger.error("Publish failed synchronously on topic {}", kafkaTopic, t);
+            if (terminated.compareAndSet(false, true)) {
+                synchronized (responseObserver) {
+                    responseObserver.onError(Status.INTERNAL
+                            .withDescription("Publish failed synchronously: " + t.getMessage())
+                            .asRuntimeException());
+                }
+            }
+            return;
+        }
+        pub
                 .thenAccept(metadata -> {
-                    synchronized (responseObserver) {
-                        responseObserver.onNext(Eventbus.PublishResponse.newBuilder()
-                                .setPartition(metadata.partition())
-                                .setOffset(metadata.offset())
-                                .build());
+                    try {
+                        synchronized (responseObserver) {
+                            if (!terminated.get()) {
+                                responseObserver.onNext(Eventbus.PublishResponse.newBuilder()
+                                        .setPartition(metadata.partition())
+                                        .setOffset(metadata.offset())
+                                        .build());
+                            }
+                        }
+                    } finally {
+                        inFlight.decrementAndGet();
+                        tryComplete();
                     }
                 })
                 .exceptionally(ex -> {
-                    logger.error("Publish failed on topic {}", kafkaTopic, ex);
-                    synchronized (responseObserver) {
-                        responseObserver.onError(Status.INTERNAL
-                                .withDescription("Publish failed: " + ex.getMessage())
-                                .asRuntimeException());
+                    try {
+                        logger.error("Publish failed on topic {}", kafkaTopic, ex);
+                        if (terminated.compareAndSet(false, true)) {
+                            synchronized (responseObserver) {
+                                responseObserver.onError(Status.INTERNAL
+                                        .withDescription("Publish failed: " + ex.getMessage())
+                                        .asRuntimeException());
+                            }
+                        }
+                    } finally {
+                        inFlight.decrementAndGet();
+                        // No tryComplete here — the stream is already terminated
+                        // via onError; calling onCompleted afterwards would
+                        // violate the gRPC single-terminal contract.
                     }
                     return null;
                 });
@@ -162,11 +211,33 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
 
     @Override
     public void onError(Throwable t) {
+        // Client cancelled or its half of the stream errored. No response
+        // expected — but log so we can see the rate of client cancellations.
         logger.debug("Client error on publish stream for topic {}", kafkaTopic, t);
     }
 
     @Override
     public void onCompleted() {
-        responseObserver.onCompleted();
+        // The client has finished sending publishes. Do NOT close the response
+        // stream yet — wait for any in-flight Kafka publishes to complete so
+        // the client sees a real ack/error for every message it sent.
+        clientCompleted.set(true);
+        tryComplete();
+    }
+
+    /**
+     * Closes the response stream with onCompleted iff the client has half-closed
+     * AND every in-flight publish has resolved AND no terminal method has been
+     * called yet. Idempotent under concurrent invocation from publish callbacks
+     * and the client's onCompleted.
+     */
+    private void tryComplete() {
+        if (!clientCompleted.get()) return;
+        if (inFlight.get() != 0) return;
+        if (terminated.compareAndSet(false, true)) {
+            synchronized (responseObserver) {
+                responseObserver.onCompleted();
+            }
+        }
     }
 }

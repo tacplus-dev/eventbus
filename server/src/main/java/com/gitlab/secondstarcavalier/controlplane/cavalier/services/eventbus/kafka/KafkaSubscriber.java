@@ -4,6 +4,8 @@ package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.ka
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.kafka.clients.consumer.*;
@@ -38,7 +40,73 @@ import org.slf4j.LoggerFactory;
 public class KafkaSubscriber {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaSubscriber.class);
+
+    /**
+     * Maximum number of consumer.poll() attempts the partition-assignment
+     * loop in {@link Session#runLoop} will make before failing the subscribe.
+     * Each attempt blocks for {@link #ASSIGNMENT_POLL_MS}. Total budget is
+     * {@code ASSIGNMENT_MAX_ATTEMPTS * ASSIGNMENT_POLL_MS} milliseconds.
+     * Override via env var {@code EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS}.
+     */
+    static final int ASSIGNMENT_MAX_ATTEMPTS =
+            intFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS", 12);
+
+    /**
+     * Per-attempt poll timeout (ms) while waiting for partition assignment.
+     * Override via env var {@code EVENTBUS_SUBSCRIBER_ASSIGNMENT_POLL_MS}.
+     */
+    static final long ASSIGNMENT_POLL_MS =
+            longFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_POLL_MS", 5000L);
+
     private final String bootstrapServers;
+
+    // Lifecycle counters — observable without a metrics framework. A future
+    // Micrometer/Prometheus wiring can read these directly.
+    private final AtomicLong sessionsStarted = new AtomicLong();
+    private final AtomicLong sessionsAssigned = new AtomicLong();
+    private final AtomicLong sessionsAssignTimedOut = new AtomicLong();
+    private final AtomicLong sessionsFailed = new AtomicLong();
+    private final AtomicInteger sessionsActive = new AtomicInteger();
+
+    public long getSessionsStarted()        { return sessionsStarted.get(); }
+    public long getSessionsAssigned()       { return sessionsAssigned.get(); }
+    public long getSessionsAssignTimedOut() { return sessionsAssignTimedOut.get(); }
+    public long getSessionsFailed()         { return sessionsFailed.get(); }
+    public int  getSessionsActive()         { return sessionsActive.get(); }
+
+    /**
+     * Thrown when a subscribe session cannot acquire any partition assignment
+     * from Kafka within the retry budget. The gRPC layer surfaces this as
+     * {@code UNAVAILABLE} so the client sees a real error instead of an empty
+     * "successful" stream.
+     */
+    public static class PartitionAssignmentTimeoutException extends RuntimeException {
+        public PartitionAssignmentTimeoutException(String message) {
+            super(message);
+        }
+    }
+
+    private static int intFromEnv(String name, int defaultValue) {
+        String v = System.getenv(name);
+        if (v == null || v.isEmpty()) return defaultValue;
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid integer for env {}={}, using default {}", name, v, defaultValue);
+            return defaultValue;
+        }
+    }
+
+    private static long longFromEnv(String name, long defaultValue) {
+        String v = System.getenv(name);
+        if (v == null || v.isEmpty()) return defaultValue;
+        try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException e) {
+            logger.warn("Invalid long for env {}={}, using default {}", name, v, defaultValue);
+            return defaultValue;
+        }
+    }
 
     public KafkaSubscriber(String bootstrapServers) {
         this.bootstrapServers = bootstrapServers;
@@ -138,11 +206,26 @@ public class KafkaSubscriber {
          * Closes the underlying KafkaConsumer when the loop exits.
          */
         public void run(SeekParams initial, RecordHandler handler) {
+            sessionsStarted.incrementAndGet();
+            sessionsActive.incrementAndGet();
+            long startedNanos = System.nanoTime();
             try {
                 runLoop(initial, handler);
+            } catch (PartitionAssignmentTimeoutException e) {
+                sessionsAssignTimedOut.incrementAndGet();
+                // Propagate so the gRPC layer can surface UNAVAILABLE to the client.
+                throw e;
             } catch (Exception e) {
+                sessionsFailed.incrementAndGet();
                 logger.error("runLoop exited with exception on topic {}: {}", topic, e.toString(), e);
             } finally {
+                sessionsActive.decrementAndGet();
+                long durationMs = (System.nanoTime() - startedNanos) / 1_000_000;
+                logger.info("Subscribe session ended: topic={}, duration_ms={}, active_sessions={}, "
+                                + "totals[started={}, assigned={}, assign_timeouts={}, failed={}]",
+                        topic, durationMs, sessionsActive.get(),
+                        sessionsStarted.get(), sessionsAssigned.get(),
+                        sessionsAssignTimedOut.get(), sessionsFailed.get());
                 consumer.close();
             }
         }
@@ -153,10 +236,11 @@ public class KafkaSubscriber {
             // Wait for partition assignment — the initial poll in createSession may not
             // have been long enough for group rebalancing to complete.
             if (partitions.isEmpty()) {
-                for (int attempt = 0; attempt < 5 && !closed; attempt++) {
-                    logger.info("Waiting for partition assignment on topic {} (attempt {})", topic, attempt + 1);
+                for (int attempt = 0; attempt < ASSIGNMENT_MAX_ATTEMPTS && !closed; attempt++) {
+                    logger.info("Waiting for partition assignment on topic {} (attempt {}/{}, poll {}ms)",
+                            topic, attempt + 1, ASSIGNMENT_MAX_ATTEMPTS, ASSIGNMENT_POLL_MS);
                     try {
-                        consumer.poll(Duration.ofMillis(5000));
+                        consumer.poll(Duration.ofMillis(ASSIGNMENT_POLL_MS));
                     } catch (org.apache.kafka.common.errors.WakeupException e) {
                         if (closed) return;
                     }
@@ -164,10 +248,14 @@ public class KafkaSubscriber {
                     if (!partitions.isEmpty()) break;
                 }
                 if (partitions.isEmpty()) {
-                    logger.warn("No partitions assigned for topic {} after retries", topic);
-                    return;
+                    throw new PartitionAssignmentTimeoutException(
+                            "No partitions assigned for topic " + topic + " after "
+                                    + ASSIGNMENT_MAX_ATTEMPTS + " attempts of "
+                                    + ASSIGNMENT_POLL_MS + "ms each");
                 }
             }
+            sessionsAssigned.incrementAndGet();
+            logger.info("Partition assignment complete: topic={}, partitions={}", topic, partitions);
 
             applySeek(consumer, partitions, initial);
             double speedMultiplier = initial.speedMultiplier();

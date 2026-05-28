@@ -47,13 +47,20 @@ public class KafkaPublisher implements AutoCloseable {
                         entry.getValue().getBytes(StandardCharsets.UTF_8));
             }
         }
-        producer.send(record, (metadata, exception) -> {
-            if (exception != null) {
-                future.completeExceptionally(exception);
-            } else {
-                future.complete(metadata);
-            }
-        });
+        try {
+            producer.send(record, (metadata, exception) -> {
+                if (exception != null) {
+                    future.completeExceptionally(exception);
+                } else {
+                    future.complete(metadata);
+                }
+            });
+        } catch (Throwable t) {
+            // producer.send can throw synchronously (e.g. IllegalStateException
+            // if the producer is closing). Without this catch the future would
+            // be silently abandoned — callers would never see success or error.
+            future.completeExceptionally(t);
+        }
         return future;
     }
 

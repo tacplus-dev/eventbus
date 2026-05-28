@@ -65,6 +65,10 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 			this.session = s;
 
 			SUBSCRIBE_EXECUTOR.submit(() -> {
+				// Tracks whether the stream has already been terminated via
+				// onError so the finally block does not also call onCompleted —
+				// gRPC forbids invoking both terminal methods on a stream.
+				AtomicBoolean terminated = new AtomicBoolean(false);
 				try {
 					s.run(params, record -> {
 						try {
@@ -76,17 +80,30 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 						} catch (InvalidProtocolBufferException e) {
 							logger.error("Failed to parse record on topic {} partition {} offset {}",
 									record.topic(), record.partition(), record.offset(), e);
-							synchronized (responseObserver) {
-								responseObserver.onError(Status.INTERNAL
-										.withDescription("Failed to parse event: " + e.getMessage())
-										.asRuntimeException());
+							if (terminated.compareAndSet(false, true)) {
+								synchronized (responseObserver) {
+									responseObserver.onError(Status.INTERNAL
+											.withDescription("Failed to parse event: " + e.getMessage())
+											.asRuntimeException());
+								}
 							}
 							return false;
 						}
 					});
+				} catch (KafkaSubscriber.PartitionAssignmentTimeoutException e) {
+					logger.warn("Partition assignment timeout for topic {}: {}", kafkaTopic, e.getMessage());
+					if (terminated.compareAndSet(false, true)) {
+						synchronized (responseObserver) {
+							responseObserver.onError(Status.UNAVAILABLE
+									.withDescription("Kafka partition assignment timeout for topic " + kafkaTopic)
+									.asRuntimeException());
+						}
+					}
 				} finally {
-					synchronized (responseObserver) {
-						responseObserver.onCompleted();
+					if (terminated.compareAndSet(false, true)) {
+						synchronized (responseObserver) {
+							responseObserver.onCompleted();
+						}
 					}
 				}
 			});
