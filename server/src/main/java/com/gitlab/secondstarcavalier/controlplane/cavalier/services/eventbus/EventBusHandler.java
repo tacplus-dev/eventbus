@@ -89,21 +89,13 @@ public class EventBusHandler implements Handler {
 	}
 
 	/**
-	 * Called by ServiceManager when an event arrives via the loopback subscription
-	 * to EventBus's own claudesensor event stream. No-op: trace dispatch for
-	 * INTERNAL_REQUEST events is already handled at publish time in buildLazyTypedBindings().
+	 * Fallback for event-stream topics not explicitly overridden above. EventBus
+	 * does not consume its own event streams, so this is a no-op that satisfies the
+	 * generated Handler contract. (Trace dispatch for INTERNAL_REQUEST events is
+	 * handled at publish time in buildLazyTypedBindings(), not on the receive path.)
 	 */
 	@Override
-	public void onEventStream(byte[] event, Handler.SubscriptionMeta meta) {
-		// intentionally empty — trace dispatch happens at publish time
-	}
-
-	/**
-	 * Fallback for any event-stream topics not explicitly overridden above.
-	 * EventBus does not store incoming events; this satisfies the Handler contract.
-	 * @Override added once tacplus regenerates Handler.java with handleEventStreamMessage().
-	 */
-	public void handleEventStreamMessage(String topic, byte[] event, Handler.SubscriptionMeta meta) {
+	public void handleEventStreamMessage(String topic, com.google.protobuf.Message event, Handler.SubscriptionMeta meta) {
 		// intentionally empty — EventBus does not consume its own event streams
 	}
 
