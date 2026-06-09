@@ -12,10 +12,10 @@
 	<name>Event Bus Server</name>
 	<description>gRPC-Kafka bridge with embedded KRaft broker and replay support</description>
 	<dependencies>
-		<!-- Tacplus generated types -->
+		<!-- Generated model types -->
 		<dependency>
 			<groupId>com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus</groupId>
-			<artifactId>eventbus-tacplus</artifactId>
+			<artifactId>eventbus-model</artifactId>
 		</dependency>
 		<!-- Kafka server (includes kafka-clients transitively) -->
 		<dependency>
@@ -182,7 +182,7 @@
 					</execution>
 				</executions>
 				<configuration>
-					<registryFile>${project.basedir}/../tacplus/target/generated-sources/tacplus/registry.json</registryFile>
+					<registryFile>${project.basedir}/../model/target/generated-sources/model/registry.json</registryFile>
 					<outputDir>${project.build.directory}/generated-sources/eventbus-codegen</outputDir>
 				</configuration>
 			</plugin>

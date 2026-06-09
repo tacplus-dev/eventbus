@@ -5,9 +5,9 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kaf
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.KafkaSubscriber;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kafka.TopicManager;
 
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.Eventbus;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.services.eventbus.AdminGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.tacplus.types.libs.trace.Trace;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
 import com.google.protobuf.Empty;
 import com.google.protobuf.Timestamp;
 import io.grpc.Status;

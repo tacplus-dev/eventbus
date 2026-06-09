@@ -1,7 +1,7 @@
 tacplus-version: "1.2.x"
 language: java
 pkg: com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus
-output-dir: tacplus/target/generated-sources
+output-dir: model/target/generated-sources
 clients:
   c2s:
     enabled: true

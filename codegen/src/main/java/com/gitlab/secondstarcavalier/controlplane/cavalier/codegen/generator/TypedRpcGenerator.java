@@ -32,12 +32,12 @@ public class TypedRpcGenerator {
     }
 
     /**
-     * Derives the hand-written service package from the tacplus package.
-     * "com.example.eventbus.tacplus" → "com.example.eventbus"
+     * Derives the hand-written service package from the model package.
+     * "com.example.eventbus.model" → "com.example.eventbus"
      */
     private String servicePackage() {
-        if (packageBase.endsWith(".tacplus")) {
-            return packageBase.substring(0, packageBase.length() - ".tacplus".length());
+        if (packageBase.endsWith(".model")) {
+            return packageBase.substring(0, packageBase.length() - ".model".length());
         }
         return packageBase;
     }
@@ -61,13 +61,13 @@ public class TypedRpcGenerator {
         sb.append("import java.util.Set;\n");
         sb.append("import java.util.function.Supplier;\n\n");
 
-        // Hand-written service code (under service package, not tacplus)
+        // Hand-written service code (under service package, not model)
         sb.append("import ").append(svcPkg).append(".kafka.KafkaPublisher;\n");
         sb.append("import ").append(svcPkg).append(".kafka.KafkaSubscriber;\n");
         sb.append("import ").append(svcPkg).append(".kafka.TopicManager;\n");
         sb.append("import ").append(svcPkg).append(".grpc.PublishHandler;\n");
         sb.append("import ").append(svcPkg).append(".grpc.SubscribeHandler;\n");
-        // Proto types under tacplus package
+        // Proto types under model package
         sb.append("import ").append(packageBase).append(".types.services.eventbus.Eventbus;\n\n");
 
         // Import each topic's proto outer class (messages are nested inside)

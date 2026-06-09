@@ -26,12 +26,12 @@ public class TopicRegistryGenerator {
     }
 
     /**
-     * Derives the hand-written service package from the tacplus package.
-     * "com.example.eventbus.tacplus" → "com.example.eventbus"
+     * Derives the hand-written service package from the model package.
+     * "com.example.eventbus.model" → "com.example.eventbus"
      */
     private String servicePackage() {
-        if (packageBase.endsWith(".tacplus")) {
-            return packageBase.substring(0, packageBase.length() - ".tacplus".length());
+        if (packageBase.endsWith(".model")) {
+            return packageBase.substring(0, packageBase.length() - ".model".length());
         }
         return packageBase;
     }

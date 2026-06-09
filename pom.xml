@@ -8,7 +8,7 @@
 	<name>Event Bus Parent</name>
 	<description>Parent POM for event-bus (gRPC-Kafka bridge with replay)</description>
 	<modules>
-		<module>tacplus</module>
+		<module>model</module>
 		<module>codegen</module>
 		<module>server</module>
 	</modules>
@@ -159,7 +159,7 @@
 			</dependency>
 			<dependency>
 				<groupId>com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus</groupId>
-				<artifactId>eventbus-tacplus</artifactId>
+				<artifactId>eventbus-model</artifactId>
 				<version>${project.version}</version>
 			</dependency>
 		</dependencies>

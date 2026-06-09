@@ -21,11 +21,11 @@ import java.util.*;
 public class EventBusMojo extends AbstractMojo {
 
     @Parameter(property = "registryFile",
-               defaultValue = "${project.build.directory}/generated-sources/tacplus/registry.json")
+               defaultValue = "${project.build.directory}/generated-sources/model/registry.json")
     private File registryFile;
 
     @Parameter(property = "outputDir",
-               defaultValue = "${project.build.directory}/generated-sources/tacplus")
+               defaultValue = "${project.build.directory}/generated-sources/model")
     private File outputDir;
 
     @Parameter(property = "javaPackageBase")
