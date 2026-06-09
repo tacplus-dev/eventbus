@@ -89,17 +89,6 @@ public class EventBusHandler implements Handler {
 	}
 
 	/**
-	 * Fallback for event-stream topics not explicitly overridden above. EventBus
-	 * does not consume its own event streams, so this is a no-op that satisfies the
-	 * generated Handler contract. (Trace dispatch for INTERNAL_REQUEST events is
-	 * handled at publish time in buildLazyTypedBindings(), not on the receive path.)
-	 */
-	@Override
-	public void handleEventStreamMessage(String topic, com.google.protobuf.Message event, Handler.SubscriptionMeta meta) {
-		// intentionally empty — EventBus does not consume its own event streams
-	}
-
-	/**
 	 * Fetch the eventbus Config from kernel and initialize Kafka.
 	 * Called once on first TLS cert delivery.
 	 */
