@@ -32,6 +32,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.mod
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.EventbusConfigStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
+import com.google.protobuf.DynamicMessage;
 
 import io.grpc.ManagedChannel;
 import io.grpc.MethodDescriptor;
@@ -243,12 +244,12 @@ public class EventBusHandler implements Handler {
 							.build()));
 				}));
 
-		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<Claudesensor.SensorEvent> resp) -> {
-					if (subscriber == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
+			svc.addMethod(TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+				ServerCalls.asyncBidiStreamingCall(
+					(StreamObserver<DynamicMessage> resp) -> {
+						if (subscriber == null) {
+							resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+							return noOpObserver();
 					}
 					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, resp,
 						Claudesensor.SensorEvent::parseFrom);
@@ -265,12 +266,12 @@ public class EventBusHandler implements Handler {
 						null, null, null);
 				}));
 
-		svc.addMethod(TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<Trace.TraceEvent> resp) -> {
-					if (subscriber == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
+			svc.addMethod(TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
+				ServerCalls.asyncBidiStreamingCall(
+					(StreamObserver<DynamicMessage> resp) -> {
+						if (subscriber == null) {
+							resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+							return noOpObserver();
 					}
 					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, resp,
 						Trace.TraceEvent::parseFrom);

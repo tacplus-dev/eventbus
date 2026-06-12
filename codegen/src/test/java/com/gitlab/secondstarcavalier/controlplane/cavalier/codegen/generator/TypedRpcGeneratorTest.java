@@ -44,6 +44,16 @@ class TypedRpcGeneratorTest {
         // Service name
         assertTrue(content.contains("eventbus.EventBusTypedService"),
                 "should reference typed service name");
+        assertTrue(content.contains("import com.google.protobuf.DynamicMessage;"),
+                "subscribe responses should use the metadata envelope type");
+        assertTrue(content.contains("MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>"),
+                "subscribe method descriptors should marshal metadata-bearing envelopes");
+        assertTrue(content.contains("ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance())"),
+                "subscribe method descriptors should use the EventBus envelope marshaller");
+        assertTrue(content.contains("StreamObserver<DynamicMessage> resp"),
+                "subscribe handlers should receive envelope response observers");
+        assertFalse(content.contains("MethodDescriptor<Eventbus.SubscribeRequest, Aegis.TopologyEvent>"),
+                "subscribe method descriptors must not stream bare payloads");
 
         // bindAll method
         assertTrue(content.contains("bindAll"), "should contain bindAll method");

@@ -49,6 +49,7 @@ public class TypedRpcGenerator {
         sb.append("package ").append(svcPkg).append(".generated;\n\n");
 
         // Imports
+        sb.append("import com.google.protobuf.DynamicMessage;\n");
         sb.append("import com.google.protobuf.MessageLite;\n");
         sb.append("import io.grpc.MethodDescriptor;\n");
         sb.append("import io.grpc.ServerServiceDefinition;\n");
@@ -108,15 +109,13 @@ public class TypedRpcGenerator {
             sb.append("            .build();\n\n");
 
             // Subscribe method descriptor
-            sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, ")
-              .append(qualifiedType).append(">\n");
+            sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>\n");
             sb.append("        SUBSCRIBE_").append(constName).append(" = MethodDescriptor\n");
-            sb.append("            .<Eventbus.SubscribeRequest, ").append(qualifiedType).append(">newBuilder()\n");
+            sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
             sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
             sb.append("            .setFullMethodName(SERVICE_NAME + \"/Subscribe").append(rpcPrefix).append("\")\n");
             sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
-            sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(")
-              .append(qualifiedType).append(".getDefaultInstance()))\n");
+            sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
             sb.append("            .build();\n\n");
         }
 
@@ -152,7 +151,7 @@ public class TypedRpcGenerator {
             // Subscribe binding
             sb.append("        svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
             sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                (StreamObserver<").append(qualifiedType).append("> resp) ->\n");
+            sb.append("                (StreamObserver<DynamicMessage> resp) ->\n");
             sb.append("                    new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_")
               .append(constName).append(", resp,\n");
             sb.append("                        ").append(qualifiedType).append("::parseFrom)));\n\n");
@@ -216,7 +215,7 @@ public class TypedRpcGenerator {
             sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
             sb.append("            svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
             sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                    (StreamObserver<").append(qualifiedType).append("> resp) -> {\n");
+            sb.append("                    (StreamObserver<DynamicMessage> resp) -> {\n");
             sb.append("                        KafkaSubscriber sub = subscriber.get();\n");
             sb.append("                        if (sub == null) {\n");
             sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
