@@ -7,7 +7,6 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.kaf
 
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
 import com.google.protobuf.Empty;
 import com.google.protobuf.Timestamp;
 import io.grpc.Status;
@@ -40,13 +39,20 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	// -----------------------------------------------------------------------
 
 	@Override
-	public void listTopics(Trace.TraceRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
+	public void listTopics(Eventbus.ListTopicsRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
 		try {
 			List<TopicManager.TopicInfo> topics = topicManager.listTopics();
+			topics.sort(java.util.Comparator.comparing(TopicManager.TopicInfo::name));
+			int start = pageStart(request.getPageToken());
+			int end = pageEnd(start, request.getPageSize(), topics.size());
 
 			Eventbus.ListTopicsResponse.Builder builder = Eventbus.ListTopicsResponse.newBuilder();
-			for (TopicManager.TopicInfo info : topics) {
+			for (TopicManager.TopicInfo info : topics.subList(start, end)) {
 				builder.addTopics(toProto(info));
+			}
+			builder.setTotalCount(topics.size());
+			if (end < topics.size()) {
+				builder.setNextPageToken(Integer.toString(end));
 			}
 
 			responseObserver.onNext(builder.build());
@@ -125,13 +131,20 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	}
 
 	@Override
-	public void listConsumerGroups(Trace.TraceRequest request,
+	public void listConsumerGroups(Eventbus.ListConsumerGroupsRequest request,
 			StreamObserver<Eventbus.ListConsumerGroupsResponse> responseObserver) {
 		try {
 			List<TopicManager.ConsumerGroupInfo> groups = topicManager.listConsumerGroups();
+			groups.sort(java.util.Comparator.comparing(TopicManager.ConsumerGroupInfo::groupId));
+			int start = pageStart(request.getPageToken());
+			int end = pageEnd(start, request.getPageSize(), groups.size());
 			Eventbus.ListConsumerGroupsResponse.Builder builder = Eventbus.ListConsumerGroupsResponse.newBuilder();
-			for (TopicManager.ConsumerGroupInfo info : groups) {
+			for (TopicManager.ConsumerGroupInfo info : groups.subList(start, end)) {
 				builder.addGroups(toProto(info));
+			}
+			builder.setTotalCount(groups.size());
+			if (end < groups.size()) {
+				builder.setNextPageToken(Integer.toString(end));
 			}
 			responseObserver.onNext(builder.build());
 			responseObserver.onCompleted();
@@ -207,7 +220,7 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	// -----------------------------------------------------------------------
 
 	@Override
-	public void getClusterHealth(Trace.TraceRequest request,
+	public void getClusterHealth(Empty request,
 			StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
 		try {
 			TopicManager.ClusterHealth health = topicManager.getClusterHealth();
@@ -282,5 +295,17 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 		}
 
 		return b.build();
+	}
+
+	private static int pageStart(String pageToken) {
+		if (pageToken == null || pageToken.isBlank()) {
+			return 0;
+		}
+		return Math.max(0, Integer.parseInt(pageToken));
+	}
+
+	private static int pageEnd(int start, int pageSize, int total) {
+		int limit = pageSize <= 0 ? 100 : Math.min(pageSize, 500);
+		return Math.min(total, start + limit);
 	}
 }

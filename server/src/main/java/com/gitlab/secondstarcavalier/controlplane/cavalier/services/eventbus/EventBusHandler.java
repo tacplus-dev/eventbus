@@ -25,10 +25,12 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.mod
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.host.HostOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.MetaData;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.collections.CollectionRuntime;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.ServiceManager;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.EventbusConfigStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
@@ -385,13 +387,17 @@ public class EventBusHandler implements Handler {
 						com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.UNAVAILABLE, "Kafka not yet initialized");
 			}
 			@Override
-			public Eventbus.ListTopicsResponse listTopics(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller)
+			public CollectionRuntime.Page<Eventbus.TopicInfo> listTopics(
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					Eventbus.ListTopicsRequest request, CollectionRuntime.PageParams page)
 					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
 				checkReady();
 				try {
-					Eventbus.ListTopicsResponse.Builder b = Eventbus.ListTopicsResponse.newBuilder();
-					for (TopicManager.TopicInfo info : topicManager.listTopics()) b.addTopics(toProto(info));
-					return b.build();
+					List<Eventbus.TopicInfo> topics = new ArrayList<>();
+					for (TopicManager.TopicInfo info : topicManager.listTopics()) topics.add(toProto(info));
+					topics.sort(java.util.Comparator.comparing(Eventbus.TopicInfo::getName));
+					return pageByStringKey(topics, page, Eventbus.TopicInfo::getName);
+				} catch (ProtoException e) { throw e;
 				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
@@ -427,13 +433,17 @@ public class EventBusHandler implements Handler {
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.ListConsumerGroupsResponse listConsumerGroups(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller)
+			public CollectionRuntime.Page<Eventbus.ConsumerGroupInfo> listConsumerGroups(
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					Eventbus.ListConsumerGroupsRequest request, CollectionRuntime.PageParams page)
 					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
 				checkReady();
 				try {
-					Eventbus.ListConsumerGroupsResponse.Builder b = Eventbus.ListConsumerGroupsResponse.newBuilder();
-					for (TopicManager.ConsumerGroupInfo info : topicManager.listConsumerGroups()) b.addGroups(toProto(info));
-					return b.build();
+					List<Eventbus.ConsumerGroupInfo> groups = new ArrayList<>();
+					for (TopicManager.ConsumerGroupInfo info : topicManager.listConsumerGroups()) groups.add(toProto(info));
+					groups.sort(java.util.Comparator.comparing(Eventbus.ConsumerGroupInfo::getGroupId));
+					return pageByStringKey(groups, page, Eventbus.ConsumerGroupInfo::getGroupId);
+				} catch (ProtoException e) { throw e;
 				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
@@ -666,6 +676,46 @@ public class EventBusHandler implements Handler {
 		return b.build();
 	}
 
+	private static <T> CollectionRuntime.Page<T> pageByStringKey(
+			List<T> orderedItems, CollectionRuntime.PageParams page, java.util.function.Function<T, String> keyFn)
+			throws ProtoException {
+		String after = pageCursorKey(page);
+		long limit = page == null ? 0 : page.limit;
+		if (limit <= 0) {
+			return new CollectionRuntime.Page<>(java.util.Collections.emptyList(), null, orderedItems.size());
+		}
+
+		List<T> items = new ArrayList<>();
+		CollectionRuntime.Cursor nextAfter = null;
+		for (T item : orderedItems) {
+			String key = keyFn.apply(item);
+			if (after != null && key.compareTo(after) <= 0) {
+				continue;
+			}
+			if (items.size() >= limit) {
+				nextAfter = cursorFor(keyFn.apply(items.get(items.size() - 1)));
+				break;
+			}
+			items.add(item);
+		}
+		return new CollectionRuntime.Page<>(items, nextAfter, orderedItems.size());
+	}
+
+	private static String pageCursorKey(CollectionRuntime.PageParams page) throws ProtoException {
+		if (page == null || page.after == null) {
+			return null;
+		}
+		if (page.after.keys == null || page.after.keys.size() != 1) {
+			throw new ProtoException(ProtoException.INVALID_ARGUMENT,
+					"page_token cursor does not match the collection order");
+		}
+		return page.after.keys.get(0);
+	}
+
+	private static CollectionRuntime.Cursor cursorFor(String key) {
+		return new CollectionRuntime.Cursor(java.util.Collections.singletonList(key));
+	}
+
 	// -----------------------------------------------------------------------
 	// EventBusServiceHandler implementation
 	// -----------------------------------------------------------------------
@@ -684,13 +734,18 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public void listTopics(Trace.TraceRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
+		public void listTopics(Eventbus.ListTopicsRequest request, StreamObserver<Eventbus.ListTopicsResponse> responseObserver) {
 			try {
 				List<TopicManager.TopicInfo> topics = topicManager.listTopics();
+				topics.sort(java.util.Comparator.comparing(TopicManager.TopicInfo::name));
+				int start = pageStart(request.getPageToken());
+				int end = pageEnd(start, request.getPageSize(), topics.size());
 				Eventbus.ListTopicsResponse.Builder builder = Eventbus.ListTopicsResponse.newBuilder();
-				for (TopicManager.TopicInfo info : topics) {
+				for (TopicManager.TopicInfo info : topics.subList(start, end)) {
 					builder.addTopics(toProto(info));
 				}
+				builder.setTotalCount(topics.size());
+				if (end < topics.size()) builder.setNextPageToken(Integer.toString(end));
 				responseObserver.onNext(builder.build());
 				responseObserver.onCompleted();
 			} catch (Exception e) {
@@ -742,13 +797,18 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public void listConsumerGroups(Trace.TraceRequest request, StreamObserver<Eventbus.ListConsumerGroupsResponse> responseObserver) {
+		public void listConsumerGroups(Eventbus.ListConsumerGroupsRequest request, StreamObserver<Eventbus.ListConsumerGroupsResponse> responseObserver) {
 			try {
 				List<TopicManager.ConsumerGroupInfo> groups = topicManager.listConsumerGroups();
+				groups.sort(java.util.Comparator.comparing(TopicManager.ConsumerGroupInfo::groupId));
+				int start = pageStart(request.getPageToken());
+				int end = pageEnd(start, request.getPageSize(), groups.size());
 				Eventbus.ListConsumerGroupsResponse.Builder builder = Eventbus.ListConsumerGroupsResponse.newBuilder();
-				for (TopicManager.ConsumerGroupInfo info : groups) {
+				for (TopicManager.ConsumerGroupInfo info : groups.subList(start, end)) {
 					builder.addGroups(toProto(info));
 				}
+				builder.setTotalCount(groups.size());
+				if (end < groups.size()) builder.setNextPageToken(Integer.toString(end));
 				responseObserver.onNext(builder.build());
 				responseObserver.onCompleted();
 			} catch (Exception e) {
@@ -850,6 +910,18 @@ public class EventBusHandler implements Handler {
 						.build());
 			}
 			return b.build();
+		}
+
+		private static int pageStart(String pageToken) {
+			if (pageToken == null || pageToken.isBlank()) {
+				return 0;
+			}
+			return Math.max(0, Integer.parseInt(pageToken));
+		}
+
+		private static int pageEnd(int start, int pageSize, int total) {
+			int limit = pageSize <= 0 ? 100 : Math.min(pageSize, 500);
+			return Math.min(total, start + limit);
 		}
 	}
 
