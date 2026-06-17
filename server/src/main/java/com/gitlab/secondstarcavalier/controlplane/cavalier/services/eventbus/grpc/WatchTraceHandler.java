@@ -2,7 +2,9 @@
 package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc;
 
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.TraceSessionGrpc;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.TraceSession;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
@@ -23,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * auth_disabled: true — the trace_id itself is the access credential.
  */
-public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
+public class WatchTraceHandler implements TraceSession.TraceSessionHandler {
 
     private static final Logger logger = LoggerFactory.getLogger(WatchTraceHandler.class);
 
@@ -53,7 +55,7 @@ public class WatchTraceHandler extends TraceSessionGrpc.TraceSessionImplBase {
     }
 
     @Override
-    public void watchTrace(Trace.TraceRequest request, StreamObserver<Trace.TraceEvent> responseObserver) {
+    public void subscribeTrace(Caller caller, StreamObserver<Trace.TraceEvent> responseObserver) throws ProtoException {
         String traceId = UUID.randomUUID().toString();
 
         // Register cleanup on client disconnect

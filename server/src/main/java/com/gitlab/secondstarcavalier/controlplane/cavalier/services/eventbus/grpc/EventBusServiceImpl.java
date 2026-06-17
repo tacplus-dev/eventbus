@@ -96,7 +96,7 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	}
 
 	@Override
-	public void alterTopicConfig(Eventbus.AlterTopicConfigRequest request,
+	public void updateTopicConfig(Eventbus.UpdateTopicConfigRequest request,
 			StreamObserver<Eventbus.TopicInfo> responseObserver) {
 		try {
 			TopicManager.TopicInfo info = topicManager.alterTopicConfig(

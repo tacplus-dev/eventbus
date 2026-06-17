@@ -25,7 +25,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.mod
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.host.HostOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.MetaData;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.collections.CollectionRuntime;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.collection.CollectionRuntime;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.Handler;
@@ -417,8 +417,8 @@ public class EventBusHandler implements Handler {
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.TopicInfo alterTopicConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
-					Eventbus.AlterTopicConfigRequest request)
+			public Eventbus.TopicInfo updateTopicConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					Eventbus.UpdateTopicConfigRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.alterTopicConfig(request.getTopic(), request.getRetentionMs(), request.getPartitionCount())); }
@@ -498,17 +498,7 @@ public class EventBusHandler implements Handler {
 
 	@Override
 	public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler getTraceSessionGrpcImpl() {
-		return new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.TraceSession.TraceSessionHandler() {
-			@Override
-			public void watchTrace(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
-					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace.TraceEvent> responseObserver)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
-				watchTraceHandler.watchTrace(
-						com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace.TraceRequest.getDefaultInstance(),
-						responseObserver);
-			}
-		};
+		return watchTraceHandler;
 	}
 
 	@Override
@@ -775,7 +765,7 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public void alterTopicConfig(Eventbus.AlterTopicConfigRequest request, StreamObserver<Eventbus.TopicInfo> responseObserver) {
+		public void updateTopicConfig(Eventbus.UpdateTopicConfigRequest request, StreamObserver<Eventbus.TopicInfo> responseObserver) {
 			try {
 				TopicManager.TopicInfo info = topicManager.alterTopicConfig(
 						request.getTopic(), request.getRetentionMs(), request.getPartitionCount());
@@ -864,7 +854,7 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public void getClusterHealth(Trace.TraceRequest request, StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
+		public void getClusterHealth(com.google.protobuf.Empty request, StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
 			try {
 				TopicManager.ClusterHealth health = topicManager.getClusterHealth();
 				Eventbus.ClusterHealthResponse.Builder builder = Eventbus.ClusterHealthResponse.newBuilder()
