@@ -2,13 +2,14 @@
 package com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.generator;
 
 import com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.TopicDiscovery.TopicField;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.codegen.StringUtils;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.ArrayList;
 
 /**
  * Generates TypedEventBusBindings.java — programmatic gRPC MethodDescriptors
@@ -92,31 +93,33 @@ public class TypedRpcGenerator {
 
         // Method descriptors for each topic
         for (TopicField topic : topics) {
-            String rpcPrefix = topic.getStateName() + topic.getFieldPascal();
-            String constName = toConstName(rpcPrefix);
             String qualifiedType = topic.getJavaQualifiedType();
 
-            // Publish method descriptor
-            sb.append("    public static final MethodDescriptor<").append(qualifiedType)
-              .append(", Eventbus.PublishResponse>\n");
-            sb.append("        PUBLISH_").append(constName).append(" = MethodDescriptor\n");
-            sb.append("            .<").append(qualifiedType).append(", Eventbus.PublishResponse>newBuilder()\n");
-            sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
-            sb.append("            .setFullMethodName(SERVICE_NAME + \"/Publish").append(rpcPrefix).append("\")\n");
-            sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(")
-              .append(qualifiedType).append(".getDefaultInstance()))\n");
-            sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(Eventbus.PublishResponse.getDefaultInstance()))\n");
-            sb.append("            .build();\n\n");
+            for (String rpcPrefix : rpcPrefixes(topic)) {
+                String constName = toConstName(rpcPrefix);
 
-            // Subscribe method descriptor
-            sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>\n");
-            sb.append("        SUBSCRIBE_").append(constName).append(" = MethodDescriptor\n");
-            sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
-            sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
-            sb.append("            .setFullMethodName(SERVICE_NAME + \"/Subscribe").append(rpcPrefix).append("\")\n");
-            sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
-            sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
-            sb.append("            .build();\n\n");
+                // Publish method descriptor
+                sb.append("    public static final MethodDescriptor<").append(qualifiedType)
+                  .append(", Eventbus.PublishResponse>\n");
+                sb.append("        PUBLISH_").append(constName).append(" = MethodDescriptor\n");
+                sb.append("            .<").append(qualifiedType).append(", Eventbus.PublishResponse>newBuilder()\n");
+                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
+                sb.append("            .setFullMethodName(SERVICE_NAME + \"/Publish").append(rpcPrefix).append("\")\n");
+                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(")
+                  .append(qualifiedType).append(".getDefaultInstance()))\n");
+                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(Eventbus.PublishResponse.getDefaultInstance()))\n");
+                sb.append("            .build();\n\n");
+
+                // Subscribe method descriptor
+                sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>\n");
+                sb.append("        SUBSCRIBE_").append(constName).append(" = MethodDescriptor\n");
+                sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
+                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
+                sb.append("            .setFullMethodName(SERVICE_NAME + \"/Subscribe").append(rpcPrefix).append("\")\n");
+                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
+                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
+                sb.append("            .build();\n\n");
+            }
         }
 
         // bindAll method
@@ -129,32 +132,35 @@ public class TypedRpcGenerator {
         sb.append("        ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder(SERVICE_NAME);\n\n");
 
         for (TopicField topic : topics) {
-            String rpcPrefix = topic.getStateName() + topic.getFieldPascal();
-            String constName = toConstName(rpcPrefix);
+            String topicConstName = toConstName(legacyRpcPrefix(topic));
             String qualifiedType = topic.getJavaQualifiedType();
 
-            // Publish binding
-            sb.append("        // ").append(topic.getTopicName()).append("\n");
-            sb.append("        svc.addMethod(PUBLISH_").append(constName).append(",\n");
-            sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                (StreamObserver<Eventbus.PublishResponse> resp) ->\n");
-            sb.append("                    new PublishHandler<>(TopicRegistry.TOPIC_").append(constName)
-              .append(", publisher, topicManager, resp,\n");
-            if (topic.hasEmailField()) {
-                // C2S topic: stamp the caller's email from the JWT onto the proto message
-                sb.append("                        (msg, email) -> msg.toBuilder().setEmail(email).build())));\n\n");
-            } else {
-                // S2S/internal topic: no identity stamping needed
-                sb.append("                        null)));\n\n");
-            }
+            for (String rpcPrefix : rpcPrefixes(topic)) {
+                String constName = toConstName(rpcPrefix);
 
-            // Subscribe binding
-            sb.append("        svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
-            sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                (StreamObserver<DynamicMessage> resp) ->\n");
-            sb.append("                    new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_")
-              .append(constName).append(", resp,\n");
-            sb.append("                        ").append(qualifiedType).append("::parseFrom)));\n\n");
+                // Publish binding
+                sb.append("        // ").append(topic.getTopicName()).append("\n");
+                sb.append("        svc.addMethod(PUBLISH_").append(constName).append(",\n");
+                sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
+                sb.append("                (StreamObserver<Eventbus.PublishResponse> resp) ->\n");
+                sb.append("                    new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
+                  .append(", publisher, topicManager, resp,\n");
+                if (topic.hasEmailField()) {
+                    // C2S topic: stamp the caller's email from the JWT onto the proto message
+                    sb.append("                        (msg, email) -> msg.toBuilder().setEmail(email).build())));\n\n");
+                } else {
+                    // S2S/internal topic: no identity stamping needed
+                    sb.append("                        null)));\n\n");
+                }
+
+                // Subscribe binding
+                sb.append("        svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
+                sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
+                sb.append("                (StreamObserver<DynamicMessage> resp) ->\n");
+                sb.append("                    new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_")
+                  .append(topicConstName).append(", resp,\n");
+                sb.append("                        ").append(qualifiedType).append("::parseFrom)));\n\n");
+            }
         }
 
         sb.append("        return svc.build();\n");
@@ -186,46 +192,49 @@ public class TypedRpcGenerator {
         sb.append("        Set<MethodDescriptor<?, ?>> skipSet = new HashSet<>(Arrays.asList(skip));\n\n");
 
         for (TopicField topic : topics) {
-            String rpcPrefix = topic.getStateName() + topic.getFieldPascal();
-            String constName = toConstName(rpcPrefix);
+            String topicConstName = toConstName(legacyRpcPrefix(topic));
             String qualifiedType = topic.getJavaQualifiedType();
 
-            sb.append("        // ").append(topic.getTopicName()).append("\n");
-            sb.append("        if (!skipSet.contains(PUBLISH_").append(constName).append(")) {\n");
-            sb.append("            svc.addMethod(PUBLISH_").append(constName).append(",\n");
-            sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                    (StreamObserver<Eventbus.PublishResponse> resp) -> {\n");
-            sb.append("                        KafkaPublisher pub = publisher.get();\n");
-            sb.append("                        TopicManager tm = topicManager.get();\n");
-            sb.append("                        if (pub == null || tm == null) {\n");
-            sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
-            sb.append("                            return noOpObserver();\n");
-            sb.append("                        }\n");
-            sb.append("                        return new PublishHandler<>(TopicRegistry.TOPIC_").append(constName)
-              .append(", pub, tm, resp,\n");
-            if (topic.hasEmailField()) {
-                sb.append("                                (msg, email) -> msg.toBuilder().setEmail(email).build(),\n");
-            } else {
-                sb.append("                                null,\n");
-            }
-            sb.append("                                null, null);\n");
-            sb.append("                    }));\n");
-            sb.append("        }\n");
+            for (String rpcPrefix : rpcPrefixes(topic)) {
+                String constName = toConstName(rpcPrefix);
 
-            sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
-            sb.append("            svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
-            sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
-            sb.append("                    (StreamObserver<DynamicMessage> resp) -> {\n");
-            sb.append("                        KafkaSubscriber sub = subscriber.get();\n");
-            sb.append("                        if (sub == null) {\n");
-            sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
-            sb.append("                            return noOpObserver();\n");
-            sb.append("                        }\n");
-            sb.append("                        return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
-              .append(constName).append(", resp,\n");
-            sb.append("                                ").append(qualifiedType).append("::parseFrom);\n");
-            sb.append("                    }));\n");
-            sb.append("        }\n\n");
+                sb.append("        // ").append(topic.getTopicName()).append("\n");
+                sb.append("        if (!skipSet.contains(PUBLISH_").append(constName).append(")) {\n");
+                sb.append("            svc.addMethod(PUBLISH_").append(constName).append(",\n");
+                sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
+                sb.append("                    (StreamObserver<Eventbus.PublishResponse> resp) -> {\n");
+                sb.append("                        KafkaPublisher pub = publisher.get();\n");
+                sb.append("                        TopicManager tm = topicManager.get();\n");
+                sb.append("                        if (pub == null || tm == null) {\n");
+                sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+                sb.append("                            return noOpObserver();\n");
+                sb.append("                        }\n");
+                sb.append("                        return new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
+                  .append(", pub, tm, resp,\n");
+                if (topic.hasEmailField()) {
+                    sb.append("                                (msg, email) -> msg.toBuilder().setEmail(email).build(),\n");
+                } else {
+                    sb.append("                                null,\n");
+                }
+                sb.append("                                null, null);\n");
+                sb.append("                    }));\n");
+                sb.append("        }\n");
+
+                sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
+                sb.append("            svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
+                sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
+                sb.append("                    (StreamObserver<DynamicMessage> resp) -> {\n");
+                sb.append("                        KafkaSubscriber sub = subscriber.get();\n");
+                sb.append("                        if (sub == null) {\n");
+                sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+                sb.append("                            return noOpObserver();\n");
+                sb.append("                        }\n");
+                sb.append("                        return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
+                  .append(topicConstName).append(", resp,\n");
+                sb.append("                                ").append(qualifiedType).append("::parseFrom);\n");
+                sb.append("                    }));\n");
+                sb.append("        }\n\n");
+            }
         }
 
         sb.append("    }\n\n");
@@ -259,5 +268,29 @@ public class TypedRpcGenerator {
             sb.append(Character.toUpperCase(c));
         }
         return sb.toString();
+    }
+
+    private static String legacyRpcPrefix(TopicField topic) {
+        return topic.getStateName() + topic.getFieldPascal();
+    }
+
+    private static String canonicalRpcPrefix(TopicField topic) {
+        String packagePrefix = StringUtils.toPascalCase(topic.getStatePackage());
+        String legacy = legacyRpcPrefix(topic);
+        if (packagePrefix == null || packagePrefix.isEmpty()) {
+            return legacy;
+        }
+        return packagePrefix + legacy;
+    }
+
+    private static List<String> rpcPrefixes(TopicField topic) {
+        List<String> prefixes = new ArrayList<>();
+        String legacy = legacyRpcPrefix(topic);
+        String canonical = canonicalRpcPrefix(topic);
+        prefixes.add(legacy);
+        if (!canonical.equals(legacy)) {
+            prefixes.add(canonical);
+        }
+        return prefixes;
     }
 }

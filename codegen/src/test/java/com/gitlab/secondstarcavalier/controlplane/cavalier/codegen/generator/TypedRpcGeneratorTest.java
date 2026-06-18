@@ -40,6 +40,12 @@ class TypedRpcGeneratorTest {
                 "should contain publish method descriptor");
         assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"),
                 "should contain subscribe method descriptor");
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+                "should contain package-prefixed publish alias");
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+                "should contain package-prefixed subscribe alias");
+        assertTrue(content.contains("/SubscribeAegisAegisStateEventStream"),
+                "package-prefixed subscribe alias should match generated subscriber naming");
 
         // Service name
         assertTrue(content.contains("eventbus.EventBusTypedService"),
@@ -90,8 +96,39 @@ class TypedRpcGeneratorTest {
         String content = Files.readString(outputFile);
 
         assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"));
         assertTrue(content.contains("PUBLISH_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_CONVERSATIONS"));
         assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"));
         assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_CONVERSATIONS"));
+    }
+
+    @Test
+    void generate_matchesTacplusPackagePrefixedSubscriberNames() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AgenticCodeEventBus", "claudesensor", "event_stream",
+                "claudesensor.SensorEvent",
+                "vservices.claude-sensor.claudesensor.AgenticCodeEventBus.EventStream",
+                "vservices/claude-sensor",
+                "vservices",
+                true);
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services.model");
+        gen.generate(List.of(topic));
+
+        Path outputFile = tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
+        String content = Files.readString(outputFile);
+
+        assertTrue(content.contains("/PublishAgenticCodeEventBusEventStream"),
+                "legacy publisher method should remain registered");
+        assertTrue(content.contains("/PublishClaudesensorAgenticCodeEventBusEventStream"),
+                "canonical publisher method should include proto package prefix");
+        assertTrue(content.contains("/SubscribeAgenticCodeEventBusEventStream"),
+                "legacy subscriber method should remain registered");
+        assertTrue(content.contains("/SubscribeClaudesensorAgenticCodeEventBusEventStream"),
+                "canonical subscriber method should include proto package prefix");
     }
 }

@@ -225,7 +225,41 @@ public class EventBusHandler implements Handler {
 	private ServerServiceDefinition buildLazyTypedBindings() {
 		ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder("eventbus.EventBusTypedService");
 
-		svc.addMethod(TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+		addAgenticCodeBindings(svc,
+			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);
+		addAgenticCodeBindings(svc,
+			TypedEventBusBindings.PUBLISH_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);
+
+		addTraceBindings(svc,
+			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS);
+		addTraceBindings(svc,
+			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.SUBSCRIBE_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS);
+
+		// All remaining topics (LLM, SCM, and any future sensors) are auto-registered
+		// by the codegen-managed addRemainingLazy(). New vservice sensors appear here
+		// automatically after codegen rebuild — no changes to EventBusHandler needed.
+		TypedEventBusBindings.addRemainingLazy(svc,
+			() -> publisher, () -> subscriber, () -> topicManager,
+			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.PUBLISH_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
+			TypedEventBusBindings.SUBSCRIBE_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS);
+
+		return svc.build();
+	}
+
+	private void addAgenticCodeBindings(ServerServiceDefinition.Builder svc,
+			MethodDescriptor<Claudesensor.SensorEvent, Eventbus.PublishResponse> publishMethod,
+			MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage> subscribeMethod) {
+		svc.addMethod(publishMethod,
 			ServerCalls.asyncBidiStreamingCall(
 				(StreamObserver<Eventbus.PublishResponse> resp) -> {
 					if (publisher == null || topicManager == null) {
@@ -246,18 +280,22 @@ public class EventBusHandler implements Handler {
 							.build()));
 				}));
 
-			svc.addMethod(TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-				ServerCalls.asyncBidiStreamingCall(
-					(StreamObserver<DynamicMessage> resp) -> {
-						if (subscriber == null) {
-							resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-							return noOpObserver();
+		svc.addMethod(subscribeMethod,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<DynamicMessage> resp) -> {
+					if (subscriber == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
 					}
 					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, resp,
 						Claudesensor.SensorEvent::parseFrom);
 				}));
+	}
 
-		svc.addMethod(TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
+	private void addTraceBindings(ServerServiceDefinition.Builder svc,
+			MethodDescriptor<Trace.TraceEvent, Eventbus.PublishResponse> publishMethod,
+			MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage> subscribeMethod) {
+		svc.addMethod(publishMethod,
 			ServerCalls.asyncBidiStreamingCall(
 				(StreamObserver<Eventbus.PublishResponse> resp) -> {
 					if (publisher == null || topicManager == null) {
@@ -268,28 +306,16 @@ public class EventBusHandler implements Handler {
 						null, null, null);
 				}));
 
-			svc.addMethod(TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
-				ServerCalls.asyncBidiStreamingCall(
-					(StreamObserver<DynamicMessage> resp) -> {
-						if (subscriber == null) {
-							resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-							return noOpObserver();
+		svc.addMethod(subscribeMethod,
+			ServerCalls.asyncBidiStreamingCall(
+				(StreamObserver<DynamicMessage> resp) -> {
+					if (subscriber == null) {
+						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
+						return noOpObserver();
 					}
 					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, resp,
 						Trace.TraceEvent::parseFrom);
 				}));
-
-		// All remaining topics (LLM, SCM, and any future sensors) are auto-registered
-		// by the codegen-managed addRemainingLazy(). New vservice sensors appear here
-		// automatically after codegen rebuild — no changes to EventBusHandler needed.
-		TypedEventBusBindings.addRemainingLazy(svc,
-			() -> publisher, () -> subscriber, () -> topicManager,
-			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS);
-
-		return svc.build();
 	}
 
 	@SuppressWarnings("unchecked")
