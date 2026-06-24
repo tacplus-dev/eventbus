@@ -32,7 +32,7 @@ public class TopicDiscovery {
         private final String topicName;     // Kafka topic name
         private final String packagePath;   // e.g. "services/aegis"
         private final String typePathPrefix; // e.g. "services" or "common"
-        private final boolean hasEmailField; // true if the type has a string email field (C2S topics)
+        private final boolean hasSpiffeIdField; // true if the type has a string spiffe_id field (C2S topics)
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath) {
@@ -47,7 +47,7 @@ public class TopicDiscovery {
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath,
-                          String typePathPrefix, boolean hasEmailField) {
+                          String typePathPrefix, boolean hasSpiffeIdField) {
             this.stateName = stateName;
             this.statePackage = statePackage;
             this.fieldName = fieldName;
@@ -55,7 +55,7 @@ public class TopicDiscovery {
             this.topicName = topicName;
             this.packagePath = packagePath;
             this.typePathPrefix = typePathPrefix;
-            this.hasEmailField = hasEmailField;
+            this.hasSpiffeIdField = hasSpiffeIdField;
         }
 
         public String getStateName() { return stateName; }
@@ -64,7 +64,7 @@ public class TopicDiscovery {
         public String getFieldType() { return fieldType; }
         public String getTopicName() { return topicName; }
         public String getPackagePath() { return packagePath; }
-        public boolean hasEmailField() { return hasEmailField; }
+        public boolean hasSpiffeIdField() { return hasSpiffeIdField; }
 
         public String getFieldPascal() {
             return StringUtils.toPascalCase(fieldName);
@@ -112,13 +112,13 @@ public class TopicDiscovery {
         Map<String, String> packagePathMap = new HashMap<>();
         collectPackagePaths(root, packagePathMap);
 
-        // Build a set of type FQNs that have a "string email" field.
+        // Build a set of type FQNs that have a "string spiffe_id" field.
         // Used to determine which topics need identity stamping (C2S topics).
-        Set<String> typesWithEmail = new HashSet<>();
-        collectTypesWithEmailField(root, typesWithEmail);
+        Set<String> typesWithSpiffeId = new HashSet<>();
+        collectTypesWithSpiffeIdField(root, typesWithSpiffeId);
 
         List<TopicField> topics = new ArrayList<>();
-        walkNode(root, topics, packagePathMap, typesWithEmail);
+        walkNode(root, topics, packagePathMap, typesWithSpiffeId);
         return topics;
     }
 
@@ -157,9 +157,9 @@ public class TopicDiscovery {
     }
 
     /**
-     * Walks the registry tree collecting FQNs of types that have a "string email" field.
+     * Walks the registry tree collecting FQNs of types that have a "string spiffe_id" field.
      */
-    private void collectTypesWithEmailField(JsonObject node, Set<String> result) {
+    private void collectTypesWithSpiffeIdField(JsonObject node, Set<String> result) {
         if (node.has("types")) {
             for (JsonElement elem : node.getAsJsonArray("types")) {
                 JsonObject type = elem.getAsJsonObject();
@@ -167,7 +167,7 @@ public class TopicDiscovery {
                 if (!fqn.isEmpty() && type.has("fields")) {
                     for (JsonElement fieldElem : type.getAsJsonArray("fields")) {
                         JsonObject field = fieldElem.getAsJsonObject();
-                        if ("email".equals(getStr(field, "name"))
+                        if ("spiffe_id".equals(getStr(field, "name"))
                                 && "TYPE_KIND_STRING".equals(getStr(field, "type"))) {
                             result.add(fqn);
                             break;
@@ -178,13 +178,13 @@ public class TopicDiscovery {
         }
         if (node.has("children")) {
             for (JsonElement child : node.getAsJsonArray("children")) {
-                collectTypesWithEmailField(child.getAsJsonObject(), result);
+                collectTypesWithSpiffeIdField(child.getAsJsonObject(), result);
             }
         }
     }
 
     private void walkNode(JsonObject node, List<TopicField> topics,
-                          Map<String, String> packagePathMap, Set<String> typesWithEmail) {
+                          Map<String, String> packagePathMap, Set<String> typesWithSpiffeId) {
         String packagePath = node.has("full_path")
                 ? node.get("full_path").getAsString() : "";
 
@@ -219,7 +219,7 @@ public class TopicDiscovery {
                     topics.add(new TopicField(
                             stateRoot, protoPackage, fieldName,
                             typeFqn, topicName, packagePath, typePrefix,
-                            typesWithEmail.contains(typeFqn)));
+                            typesWithSpiffeId.contains(typeFqn)));
                 }
             }
         }
@@ -238,7 +238,7 @@ public class TopicDiscovery {
                     topics.add(new TopicField(
                             "", pkg, bigdataName,
                             fqn, topicName, packagePath, typePrefix,
-                            typesWithEmail.contains(fqn)));
+                            typesWithSpiffeId.contains(fqn)));
                 }
             }
         }
@@ -247,7 +247,7 @@ public class TopicDiscovery {
         if (node.has("children")) {
             JsonArray children = node.getAsJsonArray("children");
             for (JsonElement child : children) {
-                walkNode(child.getAsJsonObject(), topics, packagePathMap, typesWithEmail);
+                walkNode(child.getAsJsonObject(), topics, packagePathMap, typesWithSpiffeId);
             }
         }
     }
