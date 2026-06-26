@@ -48,7 +48,7 @@ import io.grpc.stub.StreamObserver;
 
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc.PublishHandler;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc.SubscribeHandler;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.vservices.claudesensor.Claudesensor;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.vservices.agentsensor.Agentsensor;
 
 /**
  * EventBusHandler implements the model-generated Handler interface.
@@ -226,11 +226,11 @@ public class EventBusHandler implements Handler {
 		ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder("eventbus.EventBusTypedService");
 
 		addAgenticCodeBindings(svc,
-			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);
+			TypedEventBusBindings.PUBLISH_AGENT_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENT_EVENT_BUS_EVENT_STREAM);
 		addAgenticCodeBindings(svc,
-			TypedEventBusBindings.PUBLISH_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);
+			TypedEventBusBindings.PUBLISH_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM);
 
 		addTraceBindings(svc,
 			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
@@ -244,10 +244,10 @@ public class EventBusHandler implements Handler {
 		// automatically after codegen rebuild — no changes to EventBusHandler needed.
 		TypedEventBusBindings.addRemainingLazy(svc,
 			() -> publisher, () -> subscriber, () -> topicManager,
-			TypedEventBusBindings.PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.PUBLISH_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_CLAUDESENSOR_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.PUBLISH_AGENT_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENT_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.PUBLISH_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
+			TypedEventBusBindings.SUBSCRIBE_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
 			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
@@ -257,7 +257,7 @@ public class EventBusHandler implements Handler {
 	}
 
 	private void addAgenticCodeBindings(ServerServiceDefinition.Builder svc,
-			MethodDescriptor<Claudesensor.SensorEvent, Eventbus.PublishResponse> publishMethod,
+			MethodDescriptor<Agentsensor.AgentEvent, Eventbus.PublishResponse> publishMethod,
 			MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage> subscribeMethod) {
 		svc.addMethod(publishMethod,
 			ServerCalls.asyncBidiStreamingCall(
@@ -266,9 +266,9 @@ public class EventBusHandler implements Handler {
 						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
 						return noOpObserver();
 					}
-					return new PublishHandler<>(TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, publisher, topicManager, resp,
-						(msg, email) -> msg.toBuilder().setEmail(email).build(),
-						Claudesensor.SensorEvent::getTraceId,
+					return new PublishHandler<>(TopicRegistry.TOPIC_AGENT_EVENT_BUS_EVENT_STREAM, publisher, topicManager, resp,
+						(msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build(),
+						Agentsensor.AgentEvent::getTraceId,
 						traceId -> watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
 							.setTraceId(traceId)
 							.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
@@ -287,8 +287,8 @@ public class EventBusHandler implements Handler {
 						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
 						return noOpObserver();
 					}
-					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM, resp,
-						Claudesensor.SensorEvent::parseFrom);
+					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENT_EVENT_BUS_EVENT_STREAM, resp,
+						Agentsensor.AgentEvent::parseFrom);
 				}));
 	}
 
