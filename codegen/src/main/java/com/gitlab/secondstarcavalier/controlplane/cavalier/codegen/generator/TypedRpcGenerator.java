@@ -145,9 +145,9 @@ public class TypedRpcGenerator {
                 sb.append("                (StreamObserver<Eventbus.PublishResponse> resp) ->\n");
                 sb.append("                    new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
                   .append(", publisher, topicManager, resp,\n");
-                if (topic.hasEmailField()) {
-                    // C2S topic: stamp the caller's email from the JWT onto the proto message
-                    sb.append("                        (msg, email) -> msg.toBuilder().setEmail(email).build())));\n\n");
+                if (topic.hasSpiffeIdField()) {
+                    // C2S topic: stamp the caller's verified subject SPIFFE id onto the proto message
+                    sb.append("                        (msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build())));\n\n");
                 } else {
                     // S2S/internal topic: no identity stamping needed
                     sb.append("                        null)));\n\n");
@@ -211,8 +211,8 @@ public class TypedRpcGenerator {
                 sb.append("                        }\n");
                 sb.append("                        return new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
                   .append(", pub, tm, resp,\n");
-                if (topic.hasEmailField()) {
-                    sb.append("                                (msg, email) -> msg.toBuilder().setEmail(email).build(),\n");
+                if (topic.hasSpiffeIdField()) {
+                    sb.append("                                (msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build(),\n");
                 } else {
                     sb.append("                                null,\n");
                 }

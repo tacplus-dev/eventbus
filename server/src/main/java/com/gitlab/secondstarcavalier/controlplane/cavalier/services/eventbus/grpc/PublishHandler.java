@@ -29,8 +29,8 @@ import java.util.function.Function;
  *
  * Caller identity claims are extracted from the bearer token and attached
  * as Kafka message headers. For C2S topics, the generated code passes an
- * {@link IdentityStamper} that stamps the caller's email onto the proto
- * message before serialization.
+ * {@link IdentityStamper} that stamps the caller's subject SPIFFE id (the sub claim, already a SPIFFE URI)
+ * onto the proto message's spiffe_id field before serialization.
  *
  * One instance per stream. The type parameter is the proto message type
  * for the topic (e.g., SensorEvent).
@@ -44,11 +44,11 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
 
     /**
      * Stamps identity onto a proto message. Generated per-type by the codegen
-     * plugin for C2S topics (e.g., sets the email field from the JWT claim).
+     * plugin for C2S topics (sets the spiffe_id field from the JWT sub claim).
      */
     @FunctionalInterface
     public interface IdentityStamper<T> {
-        T stamp(T message, String email);
+        T stamp(T message, String spiffeId);
     }
 
     private final String kafkaTopic;
@@ -148,9 +148,9 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
 
         T stamped = message;
         if (stamper != null) {
-            String email = callerHeaders.getOrDefault("caller.email", "");
-            if (!email.isEmpty()) {
-                stamped = stamper.stamp(message, email);
+            String spiffeId = callerHeaders.getOrDefault("caller.sub", "");
+            if (!spiffeId.isEmpty()) {
+                stamped = stamper.stamp(message, spiffeId);
             }
         }
         byte[] bytes = stamped.toByteArray();
