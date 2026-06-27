@@ -48,7 +48,6 @@ import io.grpc.stub.StreamObserver;
 
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc.PublishHandler;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grpc.SubscribeHandler;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.vservices.agentsensor.Agentsensor;
 
 /**
  * EventBusHandler implements the model-generated Handler interface.
@@ -225,13 +224,8 @@ public class EventBusHandler implements Handler {
 	private ServerServiceDefinition buildLazyTypedBindings() {
 		ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder("eventbus.EventBusTypedService");
 
-		addAgenticCodeBindings(svc,
-			TypedEventBusBindings.PUBLISH_AGENT_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENT_EVENT_BUS_EVENT_STREAM);
-		addAgenticCodeBindings(svc,
-			TypedEventBusBindings.PUBLISH_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM);
-
+		// Trace topics are framework infrastructure (not a vservice); bind them
+		// explicitly so they don't self-dispatch traces.
 		addTraceBindings(svc,
 			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS);
@@ -239,15 +233,12 @@ public class EventBusHandler implements Handler {
 			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.SUBSCRIBE_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS);
 
-		// All remaining topics (LLM, SCM, and any future sensors) are auto-registered
-		// by the codegen-managed addRemainingLazy(). New vservice sensors appear here
-		// automatically after codegen rebuild — no changes to EventBusHandler needed.
+		// Every vservice topic is auto-registered with identity-stamping (C2S) and
+		// generic trace dispatch — no per-vservice code. New sensors appear here
+		// automatically after codegen rebuild; this handler names no vservice.
 		TypedEventBusBindings.addRemainingLazy(svc,
 			() -> publisher, () -> subscriber, () -> topicManager,
-			TypedEventBusBindings.PUBLISH_AGENT_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENT_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.PUBLISH_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
-			TypedEventBusBindings.SUBSCRIBE_AGENTSENSOR_AGENT_EVENT_BUS_EVENT_STREAM,
+			this::dispatchTrace,
 			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
 			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
@@ -256,40 +247,22 @@ public class EventBusHandler implements Handler {
 		return svc.build();
 	}
 
-	private void addAgenticCodeBindings(ServerServiceDefinition.Builder svc,
-			MethodDescriptor<Agentsensor.AgentEvent, Eventbus.PublishResponse> publishMethod,
-			MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage> subscribeMethod) {
-		svc.addMethod(publishMethod,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<Eventbus.PublishResponse> resp) -> {
-					if (publisher == null || topicManager == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
-					}
-					return new PublishHandler<>(TopicRegistry.TOPIC_AGENT_EVENT_BUS_EVENT_STREAM, publisher, topicManager, resp,
-						(msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build(),
-						Agentsensor.AgentEvent::getTraceId,
-						traceId -> watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
-							.setTraceId(traceId)
-							.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
-							.setRound(Trace.TraceRound.newBuilder()
-								.setService(SERVICE_NAME)
-								.setInstanceId(sm.getInstanceId())
-								.setTimestampMs(System.currentTimeMillis())
-								.build())
-							.build()));
-				}));
-
-		svc.addMethod(subscribeMethod,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<DynamicMessage> resp) -> {
-					if (subscriber == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
-					}
-					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_AGENT_EVENT_BUS_EVENT_STREAM, resp,
-						Agentsensor.AgentEvent::parseFrom);
-				}));
+	/**
+	 * Generic trace dispatch: emits an internal-request TraceEvent for the given
+	 * trace_id. Passed to the generated bindings so every vservice topic gets
+	 * trace dispatch without naming any vservice. Invoked only for non-empty
+	 * trace_ids on non-trace topics.
+	 */
+	private void dispatchTrace(String traceId) {
+		watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
+			.setTraceId(traceId)
+			.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
+			.setRound(Trace.TraceRound.newBuilder()
+				.setService(SERVICE_NAME)
+				.setInstanceId(sm.getInstanceId())
+				.setTimestampMs(System.currentTimeMillis())
+				.build())
+			.build());
 	}
 
 	private void addTraceBindings(ServerServiceDefinition.Builder svc,

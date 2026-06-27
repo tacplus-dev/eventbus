@@ -188,6 +188,7 @@ public class TypedRpcGenerator {
         sb.append("            Supplier<KafkaPublisher> publisher,\n");
         sb.append("            Supplier<KafkaSubscriber> subscriber,\n");
         sb.append("            Supplier<TopicManager> topicManager,\n");
+        sb.append("            java.util.function.Consumer<String> onTraceId,\n");
         sb.append("            MethodDescriptor<?, ?>... skip) {\n");
         sb.append("        Set<MethodDescriptor<?, ?>> skipSet = new HashSet<>(Arrays.asList(skip));\n\n");
 
@@ -216,7 +217,13 @@ public class TypedRpcGenerator {
                 } else {
                     sb.append("                                null,\n");
                 }
-                sb.append("                                null, null);\n");
+                // Trace dispatch is generic: every event carries the injected trace_id
+                // (field 200). The trace topic itself gets none (avoids trace-of-traces).
+                if (qualifiedType.endsWith("TraceEvent")) {
+                    sb.append("                                null, null);\n");
+                } else {
+                    sb.append("                                ").append(qualifiedType).append("::getTraceId, onTraceId);\n");
+                }
                 sb.append("                    }));\n");
                 sb.append("        }\n");
 
