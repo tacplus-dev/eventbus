@@ -219,7 +219,7 @@
 				<version>3.1.0</version>
 				<executions>
 					<execution>
-						<id>tacplus-update</id>
+						<id>tacplus-build</id>
 						<phase>generate-sources</phase>
 						<goals>
 							<goal>run</goal>
@@ -227,11 +227,11 @@
 						<configuration>
 							<target xmlns:unless="ant:unless" xmlns:if="ant:if">
 								<available file="${project.build.directory}/generated-sources/model/src/main/java" type="dir" property="tacplus.skip"/>
-								<echo unless:set="tacplus.skip" message="Running tacplus update (generated sources not found)..."/>
-								<exec executable="tacplus" failonerror="true" unless:set="tacplus.skip">
-									<arg value="update"/>
+								<echo unless:set="tacplus.skip" message="Running tacplus build (generated sources not found)..."/>
+								<exec executable="tacplus" dir="${project.basedir}/.." failonerror="true" unless:set="tacplus.skip">
+									<arg value="build"/>
 								</exec>
-								<echo if:set="tacplus.skip" message="Skipping tacplus update (generated sources already exist)"/>
+								<echo if:set="tacplus.skip" message="Skipping tacplus build (generated sources already exist)"/>
 							</target>
 						</configuration>
 					</execution>
