@@ -220,7 +220,7 @@ public class EventBusServiceImpl extends AdminGrpc.AdminImplBase {
 	// -----------------------------------------------------------------------
 
 	@Override
-	public void getClusterHealth(Empty request,
+	public void getClusterHealth(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.trace.Trace.TraceRequest request,
 			StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
 		try {
 			TopicManager.ClusterHealth health = topicManager.getClusterHealth();

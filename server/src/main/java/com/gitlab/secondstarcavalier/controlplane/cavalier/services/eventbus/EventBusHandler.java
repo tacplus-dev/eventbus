@@ -22,18 +22,18 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.grp
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.EventbusStateServiceGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Helpers;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.host.HostOuterClass;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.x509.X509;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.host.HostOuterClass;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.x509.X509;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.MetaData;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.collection.CollectionRuntime;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Auth;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.x509.ImmutableCertChain;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.collection.CollectionRuntime;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Auth;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.ServiceManager;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.EventbusConfigStateServiceGrpc;
-import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.trace.Trace;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.trace.Trace;
 import com.google.protobuf.DynamicMessage;
 
 import io.grpc.ManagedChannel;
@@ -381,15 +381,15 @@ public class EventBusHandler implements Handler {
 	@Override
 	public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler getAdminGrpcImpl() {
 		return new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler() {
-			private void checkReady() throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
-				if (topicManager == null) throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(
-						com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.UNAVAILABLE, "Kafka not yet initialized");
+			private void checkReady() throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
+				if (topicManager == null) throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(
+						com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.UNAVAILABLE, "Kafka not yet initialized");
 			}
 			@Override
 			public CollectionRuntime.Page<Eventbus.TopicInfo> listTopics(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ListTopicsRequest request, CollectionRuntime.PageParams page)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try {
 					List<Eventbus.TopicInfo> topics = new ArrayList<>();
@@ -397,45 +397,45 @@ public class EventBusHandler implements Handler {
 					topics.sort(java.util.Comparator.comparing(Eventbus.TopicInfo::getName));
 					return pageByStringKey(topics, page, Eventbus.TopicInfo::getName);
 				} catch (ProtoException e) { throw e;
-				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.TopicInfo getTopicInfo(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public Eventbus.TopicInfo getTopicInfo(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.TopicInfoRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.getTopicInfo(request.getTopic())); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public void deleteTopic(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public void deleteTopic(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.DeleteTopicRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { topicManager.deleteTopic(request.getTopic()); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.TopicInfo updateTopicConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public Eventbus.TopicInfo updateTopicConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.UpdateTopicConfigRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.alterTopicConfig(request.getTopic(), request.getRetentionMs(), request.getPartitionCount())); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.ConsumerGroupInfo getConsumerGroupLag(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public Eventbus.ConsumerGroupInfo getConsumerGroupLag(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ConsumerGroupRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.getConsumerGroupLag(request.getGroupId())); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
 			public CollectionRuntime.Page<Eventbus.ConsumerGroupInfo> listConsumerGroups(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ListConsumerGroupsRequest request, CollectionRuntime.PageParams page)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try {
 					List<Eventbus.ConsumerGroupInfo> groups = new ArrayList<>();
@@ -443,12 +443,12 @@ public class EventBusHandler implements Handler {
 					groups.sort(java.util.Comparator.comparing(Eventbus.ConsumerGroupInfo::getGroupId));
 					return pageByStringKey(groups, page, Eventbus.ConsumerGroupInfo::getGroupId);
 				} catch (ProtoException e) { throw e;
-				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public void resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public void resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ResetConsumerGroupOffsetsRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try {
 					KafkaSubscriber.SeekMode mode;
@@ -458,23 +458,23 @@ public class EventBusHandler implements Handler {
 						case TIMESTAMP -> { mode = KafkaSubscriber.SeekMode.TIMESTAMP; var ts = request.getTimestamp(); value = ts.getSeconds() * 1000 + ts.getNanos() / 1_000_000; }
 						case TO_LATEST -> mode = KafkaSubscriber.SeekMode.LATEST;
 						case TO_EARLIEST -> mode = KafkaSubscriber.SeekMode.EARLIEST;
-						default -> throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INVALID_ARGUMENT, "reset_to is required");
+						default -> throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INVALID_ARGUMENT, "reset_to is required");
 					}
 					topicManager.resetConsumerGroupOffsets(request.getGroupId(), request.getTopic(), mode, value);
-				} catch (com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException pe) { throw pe; }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException pe) { throw pe; }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public void deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+			public void deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ConsumerGroupRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { topicManager.deleteConsumerGroup(request.getGroupId()); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override
-			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller)
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try {
 					TopicManager.ClusterHealth health = topicManager.getClusterHealth();
@@ -485,7 +485,7 @@ public class EventBusHandler implements Handler {
 								.setPort(bi.port()).setIsController(bi.isController()).build());
 					}
 					return builder.build();
-				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 		};
 	}
@@ -505,101 +505,101 @@ public class EventBusHandler implements Handler {
 		return new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.EventbusStateService.EventbusStateServiceHandler() {
 			@Override
 			public void watchNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesEntriesResponse> responseObserver)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				responseObserver.onCompleted();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty clearNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesClearRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesSizeResponse sizeNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesSizeRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesSizeResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse putIfAbsentNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesPutRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesQueryResponse queryNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesQueryRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesQueryResponse.getDefaultInstance();
 			}
 			@Override
 			public void watchQueryNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesQueryRequest request,
 					io.grpc.stub.StreamObserver<com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesQueryResponse> responseObserver)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				responseObserver.onCompleted();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesKeysResponse keySetNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesKeysRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesKeysResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty deleteNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesGetRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse getNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesGetRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse putNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesPutRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty setNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesPutRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.MapEmpty.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse removeNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesGetRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse containsKeyNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesGetRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesValueResponse.getDefaultInstance();
 			}
 			@Override
 			public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesEntriesResponse getAllNodes(
-					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller,
+					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller,
 					com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesGetAllRequest request)
-					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+					throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.Eventbus.NodesEntriesResponse.getDefaultInstance();
 			}
 		};
@@ -609,16 +609,16 @@ public class EventBusHandler implements Handler {
 	public com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler getEventbusConfigStateGrpcImpl() {
 		return new com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.EventbusConfigStateService.EventbusConfigStateServiceHandler() {
 			@Override
-			public Eventbus.Config getConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+			public Eventbus.Config getConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				return Eventbus.Config.getDefaultInstance();
 			}
 			@Override
-			public Eventbus.Config setConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller, Eventbus.Config request) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+			public Eventbus.Config setConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller, Eventbus.Config request) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				logger.info("setConfig: runtime config changes are not applied to a running broker");
 				return request;
 			}
 			@Override
-			public void watchConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.libs.servicemanager.Caller caller, io.grpc.stub.StreamObserver<Eventbus.Config> responseObserver) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.libs.errors.ProtoException {
+			public void watchConfig(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.servicemanager.Caller caller, io.grpc.stub.StreamObserver<Eventbus.Config> responseObserver) throws com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException {
 				responseObserver.onCompleted();
 			}
 		};
@@ -853,7 +853,7 @@ public class EventBusHandler implements Handler {
 		}
 
 		@Override
-		public void getClusterHealth(com.google.protobuf.Empty request, StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
+		public void getClusterHealth(com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.trace.Trace.TraceRequest request, StreamObserver<Eventbus.ClusterHealthResponse> responseObserver) {
 			try {
 				TopicManager.ClusterHealth health = topicManager.getClusterHealth();
 				Eventbus.ClusterHealthResponse.Builder builder = Eventbus.ClusterHealthResponse.newBuilder()
