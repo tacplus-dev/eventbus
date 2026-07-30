@@ -15,7 +15,7 @@
 	<properties>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<protobuf.version>4.34.1</protobuf.version>
+		<protobuf.version>4.35.1</protobuf.version>
 		<grpc.version>1.79.0</grpc.version>
 		<kafka.version>3.9.0</kafka.version>
 		<snakeyaml.version>2.5</snakeyaml.version>
