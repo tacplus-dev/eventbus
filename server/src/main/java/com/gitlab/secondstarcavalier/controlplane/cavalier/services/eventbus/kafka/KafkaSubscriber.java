@@ -369,6 +369,17 @@ public class KafkaSubscriber {
                         return;
                     }
                 }
+                // Only commit when this poll actually delivered records. An
+                // unconditional commit here fires on every empty poll too --
+                // at poll(500ms) that is 2 commits/sec per subscription per
+                // topic per group with ZERO traffic, which floods
+                // __consumer_offsets, overloads the KRaft controller, and
+                // eventually leaves a log the broker cannot replay on restart.
+                // An empty poll advances nothing, so the commit carries no
+                // information: skipping it is free.
+                if (records.isEmpty()) {
+                    continue;
+                }
                 try {
                     consumer.commitSync();
                 } catch (org.apache.kafka.clients.consumer.CommitFailedException e) {
