@@ -415,6 +415,15 @@ public class KafkaSubscriber {
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "5000");
 
+        // Retry/reconnect backoff — prevents tight FindCoordinator loops from
+        // overwhelming the KRaft controller when coordinator lookup fails.
+        // Without these, Kafka client defaults are 100ms/50ms/1000ms, which
+        // produces ~5-10 req/sec against a struggling controller and converts
+        // a transient blip into a full outage (observed in drill 7 pre-check).
+        props.put(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG, "1000");
+        props.put(ConsumerConfig.RECONNECT_BACKOFF_MS_CONFIG, "1000");
+        props.put(ConsumerConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG, "30000");
+
         KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props);
 
         if (!initial.partitions().isEmpty()) {

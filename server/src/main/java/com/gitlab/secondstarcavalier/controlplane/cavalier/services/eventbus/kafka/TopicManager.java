@@ -3,6 +3,8 @@ package com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.ka
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import org.apache.kafka.clients.admin.*;
@@ -336,8 +338,12 @@ public class TopicManager implements AutoCloseable {
     public ClusterHealth getClusterHealth() {
         try {
             DescribeClusterResult cluster = admin.describeCluster();
-            Collection<Node> nodes = cluster.nodes().get();
-            Node controller = cluster.controller().get();
+            // 10s timeout — if the controller is wedged this must fail fast
+            // so the health reporter can mark the instance UNHEALTHY and k8s
+            // can restart the pod. The default AdminClient timeout (60s) is
+            // far too long for a liveness probe.
+            Collection<Node> nodes = cluster.nodes().get(10, TimeUnit.SECONDS);
+            Node controller = cluster.controller().get(10, TimeUnit.SECONDS);
 
             List<BrokerInfo> brokers = new ArrayList<>();
             for (Node node : nodes) {
@@ -352,6 +358,8 @@ public class TopicManager implements AutoCloseable {
             throw new RuntimeException("Interrupted getting cluster health", e);
         } catch (ExecutionException e) {
             throw new RuntimeException("Failed to get cluster health", e);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Cluster health check timed out — controller may be wedged", e);
         }
     }
 

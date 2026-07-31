@@ -30,6 +30,7 @@ import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.mod
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.chassis.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.s2sm.ServiceManager;
+import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.healthreport.Healthreport.InstanceStatus;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.sys.errors.ProtoException;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.AdminGrpc;
 import com.gitlab.secondstarcavalier.controlplane.cavalier.services.eventbus.model.types.services.eventbus.EventbusConfigStateServiceGrpc;
@@ -215,6 +216,30 @@ public class EventBusHandler implements Handler {
 				typed, Auth.requestIdInterceptor());
 		services.add(intercepted);
 		return services;
+	}
+
+	/**
+	 * Probes the embedded Kafka broker. If the KRaft controller is wedged,
+	 * describeCluster() will time out and we report UNHEALTHY so k8s
+	 * liveness probe fails and restarts the pod — in-place recovery
+	 * without a human wiping the PVC.
+	 *
+	 * Before Kafka is initialized (waiting for TLS), we report HEALTHY
+	 * because the startup probe covers that window.
+	 */
+	@Override
+	public InstanceStatus checkHealth() {
+		if (!initialized || topicManager == null) {
+			// Not yet initialized — startup probe handles this window.
+			return InstanceStatus.INSTANCE_STATUS_HEALTHY;
+		}
+		try {
+			topicManager.getClusterHealth();
+			return InstanceStatus.INSTANCE_STATUS_HEALTHY;
+		} catch (Exception e) {
+			logger.warn("Kafka health check failed — reporting UNHEALTHY: {}", e.getMessage());
+			return InstanceStatus.INSTANCE_STATUS_UNHEALTHY;
+		}
 	}
 
 	/**

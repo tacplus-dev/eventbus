@@ -29,6 +29,26 @@ public class KafkaPublisher implements AutoCloseable {
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "lz4");
         props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "true");
+
+        // Fail fast when the broker is unreachable. Default delivery.timeout.ms
+        // is 120s — events silently buffer for 2 minutes before the caller
+        // learns they failed (observed in drill 7: 8 events expired after 120s).
+        // 30s surfaces failures before gRPC deadlines expire, giving the caller
+        // a chance to retry or propagate the error.
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, "30000");
+        // request.timeout.ms must be < delivery.timeout.ms for the producer to
+        // distinguish "broker slow" from "total delivery budget exhausted".
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, "10000");
+        // max.block.ms limits how long producer.send() blocks waiting for
+        // metadata (topic autocreation, leader election). Default is 60s;
+        // 15s surfaces metadata failures before the delivery timeout.
+        props.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, "15000");
+        // Retry backoff — same rationale as consumer: don't hammer a
+        // struggling controller with metadata requests.
+        props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, "1000");
+        props.put(ProducerConfig.RECONNECT_BACKOFF_MS_CONFIG, "1000");
+        props.put(ProducerConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG, "30000");
+
         this.producer = new KafkaProducer<>(props);
     }
 

@@ -309,6 +309,30 @@ public class KafkaEmbeddedBroker implements AutoCloseable {
         props.put("num.network.threads", "2");
         props.put("compression.type", "lz4");
 
+        // --- Consumer group churn protection ---
+        // Delay initial rebalance to batch consumer joins that arrive within a
+        // startup window. Default is 3s; 10s gives cold-starting consumers
+        // (stratum, graphdb, timedb) time to join before the first rebalance
+        // fires, reducing rebalance count from N to 1.
+        props.put("group.initial.rebalance.delay.ms", "10000");
+
+        // --- KRaft metadata log bounds ---
+        // Force a metadata snapshot every 5MB of new records. Default is ~100MB
+        // (or no limit in some builds), which allows the __cluster_metadata log
+        // to grow without bound during consumer churn (each rebalance writes
+        // group coordinator records). 5MB caps the log so the controller can
+        // always replay it on restart without wedging.
+        props.put("metadata.log.max.record.bytes.between.snapshots", String.valueOf(5 * 1024 * 1024));
+        // Snapshot at least every 60s even if the byte threshold hasn't been
+        // reached — ensures the log gets compacted during quiet periods.
+        props.put("metadata.max.idle.interval.ms", "60000");
+
+        // Reduce __consumer_offsets partitions from the default 50 to 5. Each
+        // partition is a metadata log entry; fewer partitions means fewer
+        // metadata records during offset topic auto-creation and rebalance.
+        // With a single-instance cluster, 50 partitions is pure waste.
+        props.put("offsets.topic.num.partitions", "5");
+
         return props;
     }
 
