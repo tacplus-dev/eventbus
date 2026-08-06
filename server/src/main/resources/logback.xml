@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} -- %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Kafka broker internals: INFO only.
+         Without this, kafka.request.logger at DEBUG serializes full JSON
+         for every API request on the broker's 2 network threads, which
+         stalls request processing and causes AdminClient health-check
+         timeouts during consumer reconnection storms at startup. -->
+    <logger name="kafka" level="WARN" />
+    <logger name="kafka.server.BrokerLifecycleManager" level="INFO" />
+    <logger name="kafka.coordinator.group.GroupCoordinator" level="INFO" />
+    <logger name="kafka.request.logger" level="WARN" />
+    <logger name="kafka.log" level="WARN" />
+
+    <!-- Kafka client internals (AdminClient, Consumer, Producer) -->
+    <logger name="org.apache.kafka" level="WARN" />
+    <logger name="org.apache.kafka.clients.NetworkClient" level="WARN" />
+    <logger name="org.apache.kafka.clients.consumer" level="INFO" />
+    <logger name="org.apache.kafka.clients.admin" level="INFO" />
+    <logger name="org.apache.kafka.controller" level="INFO" />
+    <logger name="org.apache.kafka.metadata" level="INFO" />
+
+    <!-- gRPC Netty frame-level logging is extremely verbose at DEBUG -->
+    <logger name="io.grpc.netty" level="INFO" />
+    <logger name="io.grpc.netty.shaded.io.grpc.netty" level="INFO" />
+
+    <!-- Application loggers at INFO -->
+    <logger name="com.gitlab.secondstarcavalier" level="INFO" />
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT" />
+    </root>
+</configuration>
