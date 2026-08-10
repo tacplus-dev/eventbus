@@ -13,7 +13,7 @@
   - Raw fallback Admin gRPC health handler now accepts `google.protobuf.Empty`
     for `GetClusterHealth`, matching the generated proto.
 - Regenerated EventBus model output with tacplus `57e6130` using:
-  `tacplus build --src /Users/jody/workspace/cavalier/proto --tag latest`.
+  `tacplus build --src /Users/jody/workspace/schematic/proto --tag latest`.
 - Verified EventBus builds against that regenerated output with:
   `JAVA_HOME=$(/usr/libexec/java_home -v 21) mvn -pl server -am
   -Dtacplus.skip=true -Dmaven.test.skip=true package`.

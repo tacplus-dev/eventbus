@@ -1,0 +1,134 @@
+// Copyright (c) 2024 Second Star Cavalier, LLC.
+package com.gitlab.secondstarcavalier.controlplane.schematic.codegen.generator;
+
+import com.gitlab.secondstarcavalier.controlplane.schematic.codegen.TopicDiscovery;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class TypedRpcGeneratorTest {
+
+    @TempDir
+    Path tempDir;
+
+    @Test
+    void generate_createsBindingsFile() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream",
+                "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream",
+                "services/aegis");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(List.of(topic));
+
+        Path outputFile = tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
+        assertTrue(Files.exists(outputFile), "TypedEventBusBindings.java should be generated");
+
+        String content = Files.readString(outputFile);
+
+        // Method descriptors
+        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"),
+                "should contain publish method descriptor");
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"),
+                "should contain subscribe method descriptor");
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+                "should contain package-prefixed publish alias");
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+                "should contain package-prefixed subscribe alias");
+        assertTrue(content.contains("/SubscribeAegisAegisStateEventStream"),
+                "package-prefixed subscribe alias should match generated subscriber naming");
+
+        // Service name
+        assertTrue(content.contains("eventbus.EventBusTypedService"),
+                "should reference typed service name");
+        assertTrue(content.contains("import com.google.protobuf.DynamicMessage;"),
+                "subscribe responses should use the metadata envelope type");
+        assertTrue(content.contains("MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>"),
+                "subscribe method descriptors should marshal metadata-bearing envelopes");
+        assertTrue(content.contains("ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance())"),
+                "subscribe method descriptors should use the EventBus envelope marshaller");
+        assertTrue(content.contains("StreamObserver<DynamicMessage> resp"),
+                "subscribe handlers should receive envelope response observers");
+        assertFalse(content.contains("MethodDescriptor<Eventbus.SubscribeRequest, Aegis.TopologyEvent>"),
+                "subscribe method descriptors must not stream bare payloads");
+
+        // bindAll method
+        assertTrue(content.contains("bindAll"), "should contain bindAll method");
+
+        // Uses PublishHandler and SubscribeHandler
+        assertTrue(content.contains("PublishHandler"), "should reference PublishHandler");
+        assertTrue(content.contains("SubscribeHandler"), "should reference SubscribeHandler");
+
+        // Uses TopicRegistry constants
+        assertTrue(content.contains("TopicRegistry.TOPIC_AEGIS_STATE_EVENT_STREAM"),
+                "should reference TopicRegistry constants");
+    }
+
+    @Test
+    void generate_multipleTopics() throws IOException {
+        List<TopicDiscovery.TopicField> topics = List.of(
+                new TopicDiscovery.TopicField(
+                        "AegisState", "aegis", "event_stream",
+                        "aegis.TopologyEvent",
+                        "services.aegis.aegis.AegisState.EventStream",
+                        "services/aegis"),
+                new TopicDiscovery.TopicField(
+                        "AegisState", "aegis", "conversations",
+                        "aegis.ConversationEvent",
+                        "services.aegis.aegis.AegisState.Conversations",
+                        "services/aegis")
+        );
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(topics);
+
+        Path outputFile = tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
+        String content = Files.readString(outputFile);
+
+        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("PUBLISH_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_CONVERSATIONS"));
+    }
+
+    @Test
+    void generate_matchesTacplusPackagePrefixedSubscriberNames() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AgenticCodeEventBus", "claudesensor", "event_stream",
+                "claudesensor.SensorEvent",
+                "vservices.claude-sensor.claudesensor.AgenticCodeEventBus.EventStream",
+                "vservices/claude-sensor",
+                "vservices",
+                true);
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services.model");
+        gen.generate(List.of(topic));
+
+        Path outputFile = tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
+        String content = Files.readString(outputFile);
+
+        assertTrue(content.contains("/PublishAgenticCodeEventBusEventStream"),
+                "legacy publisher method should remain registered");
+        assertTrue(content.contains("/PublishClaudesensorAgenticCodeEventBusEventStream"),
+                "canonical publisher method should include proto package prefix");
+        assertTrue(content.contains("/SubscribeAgenticCodeEventBusEventStream"),
+                "legacy subscriber method should remain registered");
+        assertTrue(content.contains("/SubscribeClaudesensorAgenticCodeEventBusEventStream"),
+                "canonical subscriber method should include proto package prefix");
+    }
+}
