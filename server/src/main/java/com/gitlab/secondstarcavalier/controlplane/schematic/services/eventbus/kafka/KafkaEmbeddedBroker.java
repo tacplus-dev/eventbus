@@ -358,9 +358,17 @@ public class KafkaEmbeddedBroker implements AutoCloseable {
                 .setNodeId(nodeId)
                 .build();
 
-        // Ensure __cluster_metadata-0 directory exists for KRaft
-        Path clusterMetadataDir = dataDir.resolve("__cluster_metadata-0");
-        Files.createDirectories(clusterMetadataDir);
+        // The data dir itself must exist; nothing else is pre-created here.
+        //
+        // This used to also mkdir __cluster_metadata-0 "for KRaft". Kafka's own
+        // StorageTool.format does not do that, and the QuorumController creates
+        // the metadata log itself on first start. Leaving an EMPTY directory by
+        // that name behind is actively harmful: LogManager scans the log dir at
+        // startup and reads every subdirectory as a <topic>-<partition> log, so
+        // it parses ours as topic __cluster_metadata partition 0, finds no
+        // segments and no partition metadata, and kills the broker with
+        // "Encountered fatal fault: Error starting LogManager".
+        Files.createDirectories(dataDir);
 
         metaProperties.toProperties().store(
                 Files.newOutputStream(metaPropertiesPath),

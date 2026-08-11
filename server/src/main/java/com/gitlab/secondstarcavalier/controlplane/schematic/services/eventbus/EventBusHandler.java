@@ -373,8 +373,15 @@ public class EventBusHandler implements Handler {
 				}
 			} catch (Exception e) {
 				long delayMs = INIT_RETRY_DELAYS_MS[Math.min(attempt, INIT_RETRY_DELAYS_MS.length - 1)];
-				logger.error("EventBus initialization failed (attempt {}, retrying in {}ms): {}",
-						attempt + 1, delayMs, e.getMessage());
+				// Log the exception, not just getMessage(). For an IOException
+				// the message is bare -- an AccessDeniedException's message is
+				// only the path -- so this line read
+				//   "initialization failed (attempt 131): /app/data/__cluster_metadata-0"
+				// with no type and no stack, and gave no hint that the cause was
+				// a permission denial on a root-owned volume. It stayed
+				// unexplained for 131 retries.
+				logger.error("EventBus initialization failed (attempt {}, retrying in {}ms)",
+						attempt + 1, delayMs, e);
 				attempt++;
 				try {
 					Thread.sleep(delayMs);
