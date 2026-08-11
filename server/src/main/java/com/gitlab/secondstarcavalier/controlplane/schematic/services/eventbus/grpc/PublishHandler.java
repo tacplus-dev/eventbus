@@ -51,11 +51,23 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         T stamp(T message, String spiffeId);
     }
 
+    /**
+     * Validates an inbound message against its declared proto constraints.
+     * Generated per-type by the codegen plugin; throws when the message violates
+     * one.
+     */
+    @FunctionalInterface
+    public interface IngressValidator<T> {
+        void validate(T message) throws Exception;
+    }
+
     private final String kafkaTopic;
     private final KafkaPublisher publisher;
     private final StreamObserver<Eventbus.PublishResponse> responseObserver;
     private final Map<String, String> callerHeaders;
     private final IdentityStamper<T> stamper;
+    /** Rejects malformed events at ingress. Null = no generated validator. */
+    private final IngressValidator<T> validator;
     /** Extracts trace_id from an incoming message (field 200). Null = no tracing. */
     private final Function<T, String> traceIdExtractor;
     /** Called with the trace_id when a message with a non-empty trace_id is published.
@@ -79,7 +91,18 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                           TopicManager topicManager,
                           StreamObserver<Eventbus.PublishResponse> responseObserver,
                           IdentityStamper<T> stamper) {
-        this(kafkaTopic, publisher, topicManager, responseObserver, stamper, null, null);
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper, null, null, null);
+    }
+
+    /** Backward-compatible constructor without an ingress validator. */
+    public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
+                          TopicManager topicManager,
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper,
+                          Function<T, String> traceIdExtractor,
+                          Consumer<String> traceDispatcher) {
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper,
+                traceIdExtractor, traceDispatcher, null);
     }
 
     public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
@@ -87,8 +110,10 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                           StreamObserver<Eventbus.PublishResponse> responseObserver,
                           IdentityStamper<T> stamper,
                           Function<T, String> traceIdExtractor,
-                          Consumer<String> traceDispatcher) {
+                          Consumer<String> traceDispatcher,
+                          IngressValidator<T> validator) {
         this.kafkaTopic = kafkaTopic;
+        this.validator = validator;
         this.publisher = publisher;
         this.responseObserver = responseObserver;
         this.callerHeaders = extractCallerClaims();
@@ -133,6 +158,37 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
 
     @Override
     public void onNext(T message) {
+        // Validate BEFORE anything else touches the message.
+        //
+        // The publish path used to accept anything. A declared constraint was
+        // enforced only on the way OUT: agentsensor.AgentEvent.event_type is
+        // [(spec.assert_enum_defined) = true], and an event published without it
+        // was accepted, written to Kafka, consumed, and stored -- and then every
+        // read of that collection failed with "response validation failed: field
+        // eventType must be defined". One malformed record made the entire
+        // AgentEvent query unreadable, permanently, and nothing on the write path
+        // had objected.
+        //
+        // Ingress is the only choke point where every event enters the platform,
+        // so it is where a constraint the store will later insist on has to be
+        // enforced. Rejecting here costs the publisher one bad message; accepting
+        // here costs every future reader the whole collection.
+        if (validator != null) {
+            try {
+                validator.validate(message);
+            } catch (Exception e) {
+                logger.warn("Rejecting invalid event on {}: {}", kafkaTopic, e.getMessage());
+                if (terminated.compareAndSet(false, true)) {
+                    synchronized (responseObserver) {
+                        responseObserver.onError(Status.INVALID_ARGUMENT
+                                .withDescription("event failed validation: " + e.getMessage())
+                                .asRuntimeException());
+                    }
+                }
+                return;
+            }
+        }
+
         // Extract and propagate trace_id from field 200 before stamping.
         if (traceIdExtractor != null) {
             String traceId = traceIdExtractor.apply(message);

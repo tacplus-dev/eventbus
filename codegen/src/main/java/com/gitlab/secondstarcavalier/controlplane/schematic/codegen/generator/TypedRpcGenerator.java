@@ -219,10 +219,17 @@ public class TypedRpcGenerator {
                 }
                 // Trace dispatch is generic: every event carries the injected trace_id
                 // (field 200). The trace topic itself gets none (avoids trace-of-traces).
+                // The per-type validator is the LAST argument. Publishing used to
+                // accept anything, so a message violating its own declared proto
+                // constraints reached the store and then made every read of that
+                // collection fail on the way out (see PublishHandler.onNext).
+                String validatorRef = topic.getHelpersClassImport(packageBase)
+                        + "::validate" + StringUtils.extractSimpleTypeName(topic.getFieldType());
                 if (qualifiedType.endsWith("TraceEvent")) {
-                    sb.append("                                null, null);\n");
+                    sb.append("                                null, null, ").append(validatorRef).append(");\n");
                 } else {
-                    sb.append("                                ").append(qualifiedType).append("::getTraceId, onTraceId);\n");
+                    sb.append("                                ").append(qualifiedType)
+                      .append("::getTraceId, onTraceId, ").append(validatorRef).append(");\n");
                 }
                 sb.append("                    }));\n");
                 sb.append("        }\n");

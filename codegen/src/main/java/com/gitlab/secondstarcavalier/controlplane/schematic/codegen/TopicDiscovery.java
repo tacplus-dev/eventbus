@@ -84,6 +84,19 @@ public class TopicDiscovery {
         }
 
         /**
+         * Returns the fully qualified generated Helpers class for the topic's proto
+         * package. tacplus emits one Helpers per proto package, carrying a
+         * validate&lt;Type&gt;(msg) for every message in it — which is what the publish
+         * path uses to reject an event that violates its own declared constraints.
+         */
+        public String getHelpersClassImport(String javaPackageBase) {
+            String protoPackage = fieldType.contains(".")
+                    ? fieldType.substring(0, fieldType.lastIndexOf('.'))
+                    : statePackage;
+            return javaPackageBase + ".types." + typePathPrefix + "." + protoPackage + ".Helpers";
+        }
+
+        /**
          * Returns the qualified Java type reference for use in generated code.
          * E.g., "Aegis.TopologyEvent" (outer class dot nested message).
          */
