@@ -136,6 +136,7 @@ public class KafkaEmbeddedBroker implements AutoCloseable {
                                 BrokerDefaults defaults, TlsConfig tls) throws IOException {
         this.role = role;
         this.nodeId = nodeId;
+        dataDir = kafkaLogDir(dataDir);
         Files.createDirectories(dataDir);
 
         int localPort = brokerPort + LOCAL_PORT_OFFSET;
@@ -340,6 +341,28 @@ public class KafkaEmbeddedBroker implements AutoCloseable {
         return String.join(",", voters.stream()
                 .map(Peer::toVoterEntry)
                 .toList());
+    }
+
+    /**
+     * Kafka's log dir, always a subdirectory of the configured data dir -- never
+     * the data dir itself.
+     *
+     * Kafka treats every child of a log dir as a topic-partition and refuses to
+     * start if it finds anything else:
+     *
+     *   KafkaException: Found directory /app/data/lost+found, 'lost+found' is not
+     *   in the form of topic-partition ... Kafka's log directories (and children)
+     *   should only contain Kafka topic data.
+     *
+     * The configured data dir is the mount point of a PersistentVolume, and every
+     * ext4 filesystem has a lost+found at its root. So pointing log.dirs at the
+     * volume root cannot work on any normal cluster -- it is not a race, a
+     * migration artifact, or bad state to be cleaned up. Nesting one level down
+     * gives Kafka a directory whose contents it alone owns, and leaves room for
+     * any other file this service wants to keep on the same volume.
+     */
+    private static Path kafkaLogDir(Path dataDir) {
+        return dataDir.resolve("kafka");
     }
 
     private static void formatStorageIfNeeded(Path dataDir, Uuid clusterId, int nodeId) throws IOException {
