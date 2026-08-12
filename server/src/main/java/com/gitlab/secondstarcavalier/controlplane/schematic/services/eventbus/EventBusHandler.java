@@ -96,12 +96,16 @@ public class EventBusHandler implements Handler {
 	 * Called once on first TLS cert delivery.
 	 */
 	private void initialize() throws Exception {
-		// Fetch eventbus-specific config from kernel's ConfigHolder.
-		String token = sm.getToken();
-		Metadata authHeaders = new Metadata();
-		authHeaders.put(Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER), "Bearer " + token);
-		var configStub = EventbusConfigStateServiceGrpc.newBlockingStub(sm.conn())
-				.withInterceptors(MetadataUtils.newAttachHeadersInterceptor(authHeaders));
+		// Fetch eventbus-specific config from kernel's ConfigHolder, through the
+		// GENERATED state client.
+		//
+		// This used to read sm.getToken() and hand-build an "authorization:
+		// Bearer ..." header. That worked, but it duplicates what the chassis
+		// already does and it pins one token for the life of the stub — the same
+		// staleness that made the node-registration refresh below fail forever.
+		// The generated client carries callCredentialsForAudience("kernel"),
+		// which is re-evaluated per call.
+		var configStub = sm.getStateClients().services().eventbusConfigState().stateStub();
 		Eventbus.Config config = configStub.getConfig(Trace.TraceRequest.getDefaultInstance());
 		// Apply defaults and merge env vars (mirrors what the generated ServiceManager does).
 		config = Helpers.configDefaults(config).build();
@@ -984,7 +988,15 @@ public class EventBusHandler implements Handler {
 			return List.of(new KafkaEmbeddedBroker.Peer(nodeId, hostname, controllerPort));
 		}
 
-		var stateStub = EventbusStateServiceGrpc.newBlockingStub(channel);
+		// The GENERATED state client, not a raw stub off the channel.
+		//
+		// sm.getStateClients() hands back a stub with
+		// callCredentialsForAudience("kernel") already attached. A stub built
+		// straight from the channel carries no credentials at all, so kernel
+		// rejected every call with "missing authorization header" — the node
+		// never registered, and the refresh below repeated the same rejection
+		// once a minute, indefinitely.
+		var stateStub = sm.getStateClients().services().eventbusState().stateStub();
 
 		Eventbus.EventbusNode self = Eventbus.EventbusNode.newBuilder()
 				.setNodeId(nodeId)
@@ -1011,8 +1023,9 @@ public class EventBusHandler implements Handler {
 		// Schedule refresh
 		refreshScheduler.scheduleAtFixedRate(() -> {
 			try {
-				var refreshStub = EventbusStateServiceGrpc.newBlockingStub(sm.conn());
-				refreshStub.setNodes(putRequest);
+				// Re-fetched each tick rather than captured: the client rebinds
+				// its stub (and credentials) when the channel is re-established.
+				sm.getStateClients().services().eventbusState().stateStub().setNodes(putRequest);
 			} catch (Exception e) {
 				logger.warn("Failed to refresh EventbusState registration: {}", e.getMessage());
 			}
