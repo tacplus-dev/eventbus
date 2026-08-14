@@ -73,6 +73,45 @@ class TypedRpcGeneratorTest {
                 "should reference TopicRegistry constants");
     }
 
+    /**
+     * The defect this pins: tacplus's generated PROTO declares
+     * <pkg>.<Topic>StateService/PublishTo<Field>, the broker bound only the flat
+     * eventbus.EventBusTypedService/Publish<Vservice><Topic>, and nothing
+     * asserted the two agreed. Generated clients calling the per-topic path got
+     * "Unimplemented: Method not found" while the fleet reported healthy.
+     */
+    @Test
+    void generate_bindsPerTopicServiceDeclaredByTheProto() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream",
+                "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream",
+                "services/aegis");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(List.of(topic));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+
+        assertTrue(content.contains("\"aegis.AegisStateStateService/PublishToEventStream\""),
+                "must bind the per-topic publish path the generated proto declares");
+        assertTrue(content.contains("\"aegis.AegisStateStateService/SubscribeToEventStream\""),
+                "must bind the per-topic subscribe path the generated proto declares");
+        assertTrue(content.contains("ServerServiceDefinition.builder(\"aegis.AegisStateStateService\")"),
+                "per-topic methods need their OWN ServerServiceDefinition — io.grpc "
+                        + "requires a method's service prefix to match the definition holding it");
+        assertTrue(content.contains("buildPerTopicLazy"),
+                "the per-topic definitions must be reachable from the handler");
+
+        // Additive, not a swap. Every publisher that has not yet regenerated is
+        // still calling the flat name; removing it here breaks them at runtime.
+        assertTrue(content.contains("eventbus.EventBusTypedService"),
+                "the flat service must remain bound until every publisher has regenerated");
+        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"),
+                "the flat descriptors must remain");
+    }
+
     @Test
     void generate_multipleTopics() throws IOException {
         List<TopicDiscovery.TopicField> topics = List.of(

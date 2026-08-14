@@ -219,6 +219,23 @@ public class EventBusHandler implements Handler {
 		ServerServiceDefinition intercepted = ServerInterceptors.intercept(
 				typed, Auth.requestIdInterceptor());
 		services.add(intercepted);
+
+		// The same topics again, under the per-topic service names the generated
+		// proto actually declares (<pkg>.<Topic>StateService/PublishTo<Field>).
+		// Registered as separate definitions because io.grpc requires a method's
+		// service prefix to match the definition holding it.
+		//
+		// Both conventions are served on purpose. Generated clients are split
+		// across the two — agentsensor and gitlabconnector already emit
+		// per-topic and have been getting "Method not found", while llmsensor
+		// emits the flat name — so binding both is what makes every existing
+		// client work at once, without a flag day where a regenerated publisher
+		// calls a path the deployed broker lacks. The flat names come out once
+		// every publisher has regenerated onto per-topic.
+		for (ServerServiceDefinition perTopic : TypedEventBusBindings.buildPerTopicLazy(
+				() -> publisher, () -> subscriber, () -> topicManager, this::dispatchTrace)) {
+			services.add(ServerInterceptors.intercept(perTopic, Auth.requestIdInterceptor()));
+		}
 		return services;
 	}
 

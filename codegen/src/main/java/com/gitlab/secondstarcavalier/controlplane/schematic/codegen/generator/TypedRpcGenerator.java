@@ -58,8 +58,10 @@ public class TypedRpcGenerator {
         sb.append("import io.grpc.protobuf.ProtoUtils;\n");
         sb.append("import io.grpc.stub.ServerCalls;\n");
         sb.append("import io.grpc.stub.StreamObserver;\n");
+        sb.append("import java.util.ArrayList;\n");
         sb.append("import java.util.Arrays;\n");
         sb.append("import java.util.HashSet;\n");
+        sb.append("import java.util.List;\n");
         sb.append("import java.util.Set;\n");
         sb.append("import java.util.function.Supplier;\n\n");
 
@@ -116,6 +118,47 @@ public class TypedRpcGenerator {
                 sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
                 sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
                 sb.append("            .setFullMethodName(SERVICE_NAME + \"/Subscribe").append(rpcPrefix).append("\")\n");
+                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
+                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
+                sb.append("            .build();\n\n");
+            }
+
+            // Per-topic descriptors, the convention the generated PROTO actually
+            // declares: <statePackage>.<StateName>StateService/PublishTo<Field>.
+            //
+            // The flat names above are reachable only by a client that hardcodes
+            // them, because no proto in the tree declares EventBusTypedService --
+            // so grpcurl, verify-live and anything else driven by descriptors
+            // could see only the per-topic service, which nothing bound. That is
+            // the split these descriptors close.
+            //
+            // Emitted ALONGSIDE the flat ones on purpose. Publishers switch to
+            // these when they regenerate, and until every one has, both are
+            // served. Removing the flat names before that point breaks every
+            // publisher in the fleet at its next regeneration.
+            if (!isTraceTopic(topic)) {
+                String perTopicConst = perTopicConstName(topic);
+                String perTopicService = perTopicServiceName(topic);
+                String fieldPascal = topic.getFieldPascal();
+
+                sb.append("    public static final MethodDescriptor<").append(qualifiedType)
+                  .append(", Eventbus.PublishResponse>\n");
+                sb.append("        PUBLISH_TO_").append(perTopicConst).append(" = MethodDescriptor\n");
+                sb.append("            .<").append(qualifiedType).append(", Eventbus.PublishResponse>newBuilder()\n");
+                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
+                sb.append("            .setFullMethodName(\"").append(perTopicService)
+                  .append("/PublishTo").append(fieldPascal).append("\")\n");
+                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(")
+                  .append(qualifiedType).append(".getDefaultInstance()))\n");
+                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(Eventbus.PublishResponse.getDefaultInstance()))\n");
+                sb.append("            .build();\n\n");
+
+                sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>\n");
+                sb.append("        SUBSCRIBE_TO_").append(perTopicConst).append(" = MethodDescriptor\n");
+                sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
+                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
+                sb.append("            .setFullMethodName(\"").append(perTopicService)
+                  .append("/SubscribeTo").append(fieldPascal).append("\")\n");
                 sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
                 sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
                 sb.append("            .build();\n\n");
@@ -201,56 +244,68 @@ public class TypedRpcGenerator {
 
                 sb.append("        // ").append(topic.getTopicName()).append("\n");
                 sb.append("        if (!skipSet.contains(PUBLISH_").append(constName).append(")) {\n");
-                sb.append("            svc.addMethod(PUBLISH_").append(constName).append(",\n");
-                sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
-                sb.append("                    (StreamObserver<Eventbus.PublishResponse> resp) -> {\n");
-                sb.append("                        KafkaPublisher pub = publisher.get();\n");
-                sb.append("                        TopicManager tm = topicManager.get();\n");
-                sb.append("                        if (pub == null || tm == null) {\n");
-                sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
-                sb.append("                            return noOpObserver();\n");
-                sb.append("                        }\n");
-                sb.append("                        return new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
-                  .append(", pub, tm, resp,\n");
-                if (topic.hasSpiffeIdField()) {
-                    sb.append("                                (msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build(),\n");
-                } else {
-                    sb.append("                                null,\n");
-                }
-                // Trace dispatch is generic: every event carries the injected trace_id
-                // (field 200). The trace topic itself gets none (avoids trace-of-traces).
-                // The per-type validator is the LAST argument. Publishing used to
-                // accept anything, so a message violating its own declared proto
-                // constraints reached the store and then made every read of that
-                // collection fail on the way out (see PublishHandler.onNext).
-                String validatorRef = topic.getHelpersClassImport(packageBase)
-                        + "::validate" + StringUtils.extractSimpleTypeName(topic.getFieldType());
-                if (qualifiedType.endsWith("TraceEvent")) {
-                    sb.append("                                null, null, ").append(validatorRef).append(");\n");
-                } else {
-                    sb.append("                                ").append(qualifiedType)
-                      .append("::getTraceId, onTraceId, ").append(validatorRef).append(");\n");
-                }
-                sb.append("                    }));\n");
+                emitLazyPublishBinding(sb, topic, "PUBLISH_" + constName, topicConstName, qualifiedType, "    ");
                 sb.append("        }\n");
 
                 sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
-                sb.append("            svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
-                sb.append("                ServerCalls.asyncBidiStreamingCall(\n");
-                sb.append("                    (StreamObserver<DynamicMessage> resp) -> {\n");
-                sb.append("                        KafkaSubscriber sub = subscriber.get();\n");
-                sb.append("                        if (sub == null) {\n");
-                sb.append("                            resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
-                sb.append("                            return noOpObserver();\n");
-                sb.append("                        }\n");
-                sb.append("                        return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
-                  .append(topicConstName).append(", resp,\n");
-                sb.append("                                ").append(qualifiedType).append("::parseFrom);\n");
-                sb.append("                    }));\n");
+                emitLazySubscribeBinding(sb, "SUBSCRIBE_" + constName, topicConstName, qualifiedType, "    ");
                 sb.append("        }\n\n");
             }
         }
 
+        sb.append("    }\n\n");
+
+        // buildPerTopicLazy — one ServerServiceDefinition PER TOPIC.
+        //
+        // It cannot be more entries on the existing builder: io.grpc requires
+        // every method in a ServerServiceDefinition to share that definition's
+        // service name, and the whole point of per-topic is that each topic has
+        // its own. Hence a list, which is what EventBusHandler.additionalServices
+        // already returns.
+        //
+        // The handler bodies come from the same emitters as addRemainingLazy, so
+        // the two conventions cannot drift in behaviour while both are served —
+        // two generators drifting apart is exactly what produced this split.
+        sb.append("    /**\n");
+        sb.append("     * Builds one ServerServiceDefinition per topic, under the per-topic\n");
+        sb.append("     * service name the generated proto declares\n");
+        sb.append("     * ({@code <pkg>.<Topic>StateService}). Kafka clients resolve lazily,\n");
+        sb.append("     * exactly as in {@link #addRemainingLazy}.\n");
+        sb.append("     */\n");
+        sb.append("    @SuppressWarnings(\"unchecked\")\n");
+        sb.append("    public static List<ServerServiceDefinition> buildPerTopicLazy(\n");
+        sb.append("            Supplier<KafkaPublisher> publisher,\n");
+        sb.append("            Supplier<KafkaSubscriber> subscriber,\n");
+        sb.append("            Supplier<TopicManager> topicManager,\n");
+        sb.append("            java.util.function.Consumer<String> onTraceId) {\n");
+        sb.append("        List<ServerServiceDefinition> defs = new ArrayList<>();\n\n");
+
+        for (TopicField topic : topics) {
+            if (isTraceTopic(topic)) {
+                // Trace topics are framework infrastructure, not a vservice topic,
+                // and EventBusHandler binds them itself with trace-dispatch
+                // semantics. They are reachable on the flat names only; no
+                // generated client publishes to them per-topic. Skipped
+                // deliberately, and said out loud rather than left to inference.
+                continue;
+            }
+            String topicConstName = toConstName(legacyRpcPrefix(topic));
+            String qualifiedType = topic.getJavaQualifiedType();
+            String perTopicConst = perTopicConstName(topic);
+
+            sb.append("        // ").append(topic.getTopicName())
+              .append(" -> ").append(perTopicServiceName(topic)).append("\n");
+            sb.append("        {\n");
+            sb.append("            ServerServiceDefinition.Builder svc =\n");
+            sb.append("                ServerServiceDefinition.builder(\"")
+              .append(perTopicServiceName(topic)).append("\");\n");
+            emitLazyPublishBinding(sb, topic, "PUBLISH_TO_" + perTopicConst, topicConstName, qualifiedType, "    ");
+            emitLazySubscribeBinding(sb, "SUBSCRIBE_TO_" + perTopicConst, topicConstName, qualifiedType, "    ");
+            sb.append("            defs.add(svc.build());\n");
+            sb.append("        }\n\n");
+        }
+
+        sb.append("        return defs;\n");
         sb.append("    }\n\n");
 
         // Private noOpObserver helper used by addRemainingLazy
@@ -270,6 +325,85 @@ public class TypedRpcGenerator {
                 .resolve("generated");
         Files.createDirectories(outDir);
         Files.writeString(outDir.resolve("TypedEventBusBindings.java"), sb.toString());
+    }
+
+    /**
+     * Emits a lazy Publish binding onto a builder named {@code svc}. Shared by
+     * addRemainingLazy (flat names) and buildPerTopicLazy (per-topic names) so
+     * both conventions execute identical handler logic while both are served.
+     */
+    private void emitLazyPublishBinding(StringBuilder sb, TopicField topic, String descriptorConst,
+            String topicConstName, String qualifiedType, String indent) {
+        sb.append(indent).append("        svc.addMethod(").append(descriptorConst).append(",\n");
+        sb.append(indent).append("            ServerCalls.asyncBidiStreamingCall(\n");
+        sb.append(indent).append("                (StreamObserver<Eventbus.PublishResponse> resp) -> {\n");
+        sb.append(indent).append("                    KafkaPublisher pub = publisher.get();\n");
+        sb.append(indent).append("                    TopicManager tm = topicManager.get();\n");
+        sb.append(indent).append("                    if (pub == null || tm == null) {\n");
+        sb.append(indent).append("                        resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+        sb.append(indent).append("                        return noOpObserver();\n");
+        sb.append(indent).append("                    }\n");
+        sb.append(indent).append("                    return new PublishHandler<>(TopicRegistry.TOPIC_")
+          .append(topicConstName).append(", pub, tm, resp,\n");
+        if (topic.hasSpiffeIdField()) {
+            sb.append(indent).append("                            (msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build(),\n");
+        } else {
+            sb.append(indent).append("                            null,\n");
+        }
+        // Trace dispatch is generic: every event carries the injected trace_id
+        // (field 200). The trace topic itself gets none (avoids trace-of-traces).
+        // The per-type validator is the LAST argument. Publishing used to
+        // accept anything, so a message violating its own declared proto
+        // constraints reached the store and then made every read of that
+        // collection fail on the way out (see PublishHandler.onNext).
+        String validatorRef = topic.getHelpersClassImport(packageBase)
+                + "::validate" + StringUtils.extractSimpleTypeName(topic.getFieldType());
+        if (qualifiedType.endsWith("TraceEvent")) {
+            sb.append(indent).append("                            null, null, ").append(validatorRef).append(");\n");
+        } else {
+            sb.append(indent).append("                            ").append(qualifiedType)
+              .append("::getTraceId, onTraceId, ").append(validatorRef).append(");\n");
+        }
+        sb.append(indent).append("                }));\n");
+    }
+
+    /** Emits a lazy Subscribe binding onto a builder named {@code svc}. */
+    private void emitLazySubscribeBinding(StringBuilder sb, String descriptorConst,
+            String topicConstName, String qualifiedType, String indent) {
+        sb.append(indent).append("        svc.addMethod(").append(descriptorConst).append(",\n");
+        sb.append(indent).append("            ServerCalls.asyncBidiStreamingCall(\n");
+        sb.append(indent).append("                (StreamObserver<DynamicMessage> resp) -> {\n");
+        sb.append(indent).append("                    KafkaSubscriber sub = subscriber.get();\n");
+        sb.append(indent).append("                    if (sub == null) {\n");
+        sb.append(indent).append("                        resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
+        sb.append(indent).append("                        return noOpObserver();\n");
+        sb.append(indent).append("                    }\n");
+        sb.append(indent).append("                    return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
+          .append(topicConstName).append(", resp,\n");
+        sb.append(indent).append("                            ").append(qualifiedType).append("::parseFrom);\n");
+        sb.append(indent).append("                }));\n");
+    }
+
+    /**
+     * The per-topic gRPC service name, matching what tacplus declares in the
+     * generated proto: {@code <statePackage>.<StateName>StateService}.
+     */
+    private static String perTopicServiceName(TopicField topic) {
+        return topic.getStatePackage() + "." + topic.getStateName() + "StateService";
+    }
+
+    /** Constant-name stem for the per-topic descriptors. */
+    private static String perTopicConstName(TopicField topic) {
+        return toConstName(topic.getStateName() + topic.getFieldPascal());
+    }
+
+    /**
+     * Trace topics are framework infrastructure rather than a vservice topic.
+     * EventBusHandler binds them itself with trace-dispatch semantics, so they
+     * are excluded from the per-topic definitions.
+     */
+    private static boolean isTraceTopic(TopicField topic) {
+        return topic.getJavaQualifiedType().endsWith("TraceEvent");
     }
 
     private static String toConstName(String pascalCase) {
