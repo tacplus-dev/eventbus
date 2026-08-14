@@ -136,7 +136,7 @@ public class TypedRpcGenerator {
             // these when they regenerate, and until every one has, both are
             // served. Removing the flat names before that point breaks every
             // publisher in the fleet at its next regeneration.
-            if (!isTraceTopic(topic)) {
+            {
                 String perTopicConst = perTopicConstName(topic);
                 String perTopicService = perTopicServiceName(topic);
                 String fieldPascal = topic.getFieldPascal();
@@ -280,15 +280,18 @@ public class TypedRpcGenerator {
         sb.append("            java.util.function.Consumer<String> onTraceId) {\n");
         sb.append("        List<ServerServiceDefinition> defs = new ArrayList<>();\n\n");
 
+        // Trace topics are INCLUDED. An earlier revision skipped them on the
+        // reasoning that they are framework infrastructure which EventBusHandler
+        // binds itself. That reasoning was wrong in the way that matters: the only
+        // two real publishers in the platform, timedb and gateway, both declare
+        //   topic_ref: "agentsensor.TraceEventBus.trace_events"
+        // so excluding trace topics would leave exactly the publishers that exist
+        // calling a per-topic path nothing bound, the moment they regenerated.
+        //
+        // The emitted body already does the right thing for a TraceEvent type: it
+        // passes no trace-id extractor, so the trace topic does not dispatch
+        // traces about itself.
         for (TopicField topic : topics) {
-            if (isTraceTopic(topic)) {
-                // Trace topics are framework infrastructure, not a vservice topic,
-                // and EventBusHandler binds them itself with trace-dispatch
-                // semantics. They are reachable on the flat names only; no
-                // generated client publishes to them per-topic. Skipped
-                // deliberately, and said out loud rather than left to inference.
-                continue;
-            }
             String topicConstName = toConstName(legacyRpcPrefix(topic));
             String qualifiedType = topic.getJavaQualifiedType();
             String perTopicConst = perTopicConstName(topic);
@@ -395,15 +398,6 @@ public class TypedRpcGenerator {
     /** Constant-name stem for the per-topic descriptors. */
     private static String perTopicConstName(TopicField topic) {
         return toConstName(topic.getStateName() + topic.getFieldPascal());
-    }
-
-    /**
-     * Trace topics are framework infrastructure rather than a vservice topic.
-     * EventBusHandler binds them itself with trace-dispatch semantics, so they
-     * are excluded from the per-topic definitions.
-     */
-    private static boolean isTraceTopic(TopicField topic) {
-        return topic.getJavaQualifiedType().endsWith("TraceEvent");
     }
 
     private static String toConstName(String pascalCase) {
