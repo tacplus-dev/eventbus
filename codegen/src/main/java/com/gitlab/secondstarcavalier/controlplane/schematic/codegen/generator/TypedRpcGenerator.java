@@ -392,7 +392,11 @@ public class TypedRpcGenerator {
      * generated proto: {@code <statePackage>.<StateName>StateService}.
      */
     private static String perTopicServiceName(TopicField topic) {
-        return topic.getStatePackage() + "." + topic.getStateName() + "StateService";
+        // getDeclaringPackage, NOT getStatePackage. The latter is the event
+        // TYPE's package and produced "trace.TraceEventBusStateService" — a name
+        // no proto declares — while the generated proto puts the service in
+        // package agentsensor alongside the message.
+        return topic.getDeclaringPackage() + "." + topic.getStateName() + "StateService";
     }
 
     /** Constant-name stem for the per-topic descriptors. */

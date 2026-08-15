@@ -27,6 +27,15 @@ public class TopicDiscovery {
     public static class TopicField {
         private final String stateName;     // e.g. "AegisState"
         private final String statePackage;  // e.g. "aegis"
+        // The package of the proto that DECLARES the state message, which is not
+        // always statePackage: statePackage is derived from the event TYPE's FQN.
+        // For agentsensor.AgentEventBus.event_stream the event type is
+        // agentsensor.AgentEvent and the two agree; for TraceEventBus the event
+        // type is trace.TraceEvent while the message is declared in agentsensor,
+        // and they diverge. Only this value matches what the generated proto
+        // declares, so only this may be used to build a per-topic service name.
+        // statePackage still composes the Kafka topic name and must not move.
+        private final String declaringPackage;
         private final String fieldName;     // e.g. "event_stream"
         private final String fieldType;     // FQN e.g. "aegis.TopologyEvent"
         private final String topicName;     // Kafka topic name
@@ -36,18 +45,28 @@ public class TopicDiscovery {
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath) {
-            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath, "services", false);
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath, "services", false, statePackage);
         }
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath,
                           String typePathPrefix) {
-            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath, typePathPrefix, false);
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath, typePathPrefix, false, statePackage);
         }
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath,
                           String typePathPrefix, boolean hasSpiffeIdField) {
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath,
+                    typePathPrefix, hasSpiffeIdField, statePackage);
+        }
+
+        public TopicField(String stateName, String statePackage, String fieldName,
+                          String fieldType, String topicName, String packagePath,
+                          String typePathPrefix, boolean hasSpiffeIdField,
+                          String declaringPackage) {
+            this.declaringPackage = declaringPackage == null || declaringPackage.isEmpty()
+                    ? statePackage : declaringPackage;
             this.stateName = stateName;
             this.statePackage = statePackage;
             this.fieldName = fieldName;
@@ -60,6 +79,12 @@ public class TopicDiscovery {
 
         public String getStateName() { return stateName; }
         public String getStatePackage() { return statePackage; }
+
+        /**
+         * The package of the proto declaring the state message — the package the
+         * generated proto puts the per-topic {@code <Topic>StateService} in.
+         */
+        public String getDeclaringPackage() { return declaringPackage; }
         public String getFieldName() { return fieldName; }
         public String getFieldType() { return fieldType; }
         public String getTopicName() { return topicName; }
@@ -196,6 +221,23 @@ public class TopicDiscovery {
         }
     }
 
+    /**
+     * The proto package declared by this registry node, e.g. the
+     * vservices/agent-sensor node declares package "agentsensor". Falls back to
+     * the supplied default when the node carries no types.
+     */
+    private String nodePackage(JsonObject node, String fallback) {
+        if (node.has("types")) {
+            for (JsonElement elem : node.getAsJsonArray("types")) {
+                String pkg = getStr(elem.getAsJsonObject(), "package");
+                if (!pkg.isEmpty()) {
+                    return pkg;
+                }
+            }
+        }
+        return fallback;
+    }
+
     private void walkNode(JsonObject node, List<TopicField> topics,
                           Map<String, String> packagePathMap, Set<String> typesWithSpiffeId) {
         String packagePath = node.has("full_path")
@@ -229,10 +271,17 @@ public class TopicDiscovery {
                     String topicName = packagePath.replace('/', '.') + "." +
                             protoPackage + "." + stateRoot + "." + fieldPascal;
 
+                    // The package that DECLARES this state message, read from the
+                    // node the boundary was found on. protoPackage above is the
+                    // event TYPE's package and is not the same thing whenever a
+                    // topic carries a type from another proto — which is exactly
+                    // the trace topic. Only this is safe to name a service with.
+                    String declaringPackage = nodePackage(node, protoPackage);
+
                     topics.add(new TopicField(
                             stateRoot, protoPackage, fieldName,
                             typeFqn, topicName, packagePath, typePrefix,
-                            typesWithSpiffeId.contains(typeFqn)));
+                            typesWithSpiffeId.contains(typeFqn), declaringPackage));
                 }
             }
         }

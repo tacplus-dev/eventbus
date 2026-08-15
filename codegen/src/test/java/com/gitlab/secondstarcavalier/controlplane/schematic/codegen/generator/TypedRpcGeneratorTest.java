@@ -112,6 +112,42 @@ class TypedRpcGeneratorTest {
                 "the flat descriptors must remain");
     }
 
+    /**
+     * The trace topic is the case where the two packages diverge: the state
+     * message TraceEventBus is declared in package agentsensor, while its event
+     * type is trace.TraceEvent. Deriving the service name from the event type
+     * produced "trace.TraceEventBusStateService" — a name no proto declares —
+     * and it went unnoticed because the OTHER topic's event type happens to sit
+     * in the same package as its state message, so the wrong derivation gave the
+     * right answer there.
+     */
+    @Test
+    void generate_namesPerTopicServiceByTheDeclaringPackageNotTheEventType() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "TraceEventBus", "trace", "trace_events",
+                "trace.TraceEvent",
+                "vservices.agent-sensor.trace.TraceEventBus.TraceEvents",
+                "vservices/agent-sensor", "vservices", false,
+                "agentsensor");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(List.of(topic));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+
+        assertTrue(content.contains("\"agentsensor.TraceEventBusStateService/PublishToTraceEvents\""),
+                "per-topic service must be named by the DECLARING package (agentsensor)");
+        assertFalse(content.contains("\"trace.TraceEventBusStateService"),
+                "must not name the service by the event type's package — no proto declares that");
+
+        // The Kafka topic name is built from the event type's package and must
+        // NOT move: renaming a live topic orphans its retained events.
+        assertTrue(content.contains("vservices.agent-sensor.trace.TraceEventBus.TraceEvents")
+                        || content.contains("TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS"),
+                "the Kafka topic binding must be untouched by the service-name fix");
+    }
+
     @Test
     void generate_multipleTopics() throws IOException {
         List<TopicDiscovery.TopicField> topics = List.of(
