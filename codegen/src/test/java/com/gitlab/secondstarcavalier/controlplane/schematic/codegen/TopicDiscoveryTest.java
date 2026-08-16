@@ -100,4 +100,33 @@ class TopicDiscoveryTest {
                 .anyMatch(t -> t.getStateName().equals("Cluster"));
         assertFalse(hasKernel, "kernel-store boundaries should not be discovered");
     }
+
+    @Test
+    void discoverTopics_javaTypeSuffixedWhenServiceSharesOuterClassName() throws IOException {
+        Path registryPath = Path.of(getClass().getClassLoader()
+                .getResource("test-registry-outerclass.json").getPath());
+
+        TopicDiscovery discovery = new TopicDiscovery(registryPath);
+        List<TopicDiscovery.TopicField> topics = discovery.discoverTopics();
+
+        // package "tasks" also declares "service Tasks", so protoc — and tacplus's
+        // java_outer_classname — call the outer class TasksOuterClass. Importing
+        // plain "Tasks" does not compile.
+        TopicDiscovery.TopicField taskEvents = topics.stream()
+                .filter(t -> t.getFieldName().equals("task_events"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("com.example.services.types.services.tasks.TasksOuterClass",
+                taskEvents.getJavaOuterClassImport("com.example.services"));
+        assertEquals("TasksOuterClass.TaskEvent", taskEvents.getJavaQualifiedType());
+
+        // package "aegis" has no such collision and keeps the plain name.
+        TopicDiscovery.TopicField eventStream = topics.stream()
+                .filter(t -> t.getFieldName().equals("event_stream"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("com.example.services.types.services.aegis.Aegis",
+                eventStream.getJavaOuterClassImport("com.example.services"));
+        assertEquals("Aegis.TopologyEvent", eventStream.getJavaQualifiedType());
+    }
 }

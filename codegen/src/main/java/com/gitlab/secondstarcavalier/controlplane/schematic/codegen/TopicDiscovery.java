@@ -42,6 +42,7 @@ public class TopicDiscovery {
         private final String packagePath;   // e.g. "services/aegis"
         private final String typePathPrefix; // e.g. "services" or "common"
         private final boolean hasSpiffeIdField; // true if the type has a string spiffe_id field (C2S topics)
+        private String javaOuterClass;      // resolved from the registry; see setJavaOuterClass
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath) {
@@ -95,17 +96,38 @@ public class TopicDiscovery {
             return StringUtils.toPascalCase(fieldName);
         }
 
+        /** The proto package the topic's event TYPE lives in. */
+        private String typeProtoPackage() {
+            return fieldType.contains(".")
+                    ? fieldType.substring(0, fieldType.lastIndexOf('.'))
+                    : statePackage;
+        }
+
+        /**
+         * The outer class protoc puts the package's messages in. Normally the
+         * pascal-cased package, but protoc appends "OuterClass" when a top-level
+         * message, enum or service in the file already has that name — as
+         * tasks.proto's {@code service Tasks} does. Resolved from the registry in
+         * {@link #discoverTopics()}; the unresolved fallback is the plain form.
+         */
+        void setJavaOuterClass(String javaOuterClass) {
+            this.javaOuterClass = javaOuterClass;
+        }
+
+        private String javaOuterClass() {
+            return javaOuterClass != null && !javaOuterClass.isEmpty()
+                    ? javaOuterClass
+                    : StringUtils.toPascalCase(typeProtoPackage());
+        }
+
         /**
          * Returns the fully qualified Java outer class import for the topic's proto type.
          * Proto messages are nested inside the outer class (e.g., Aegis.TopologyEvent).
          * Handles types from both services/ and common/ proto directories.
          */
         public String getJavaOuterClassImport(String javaPackageBase) {
-            String protoPackage = fieldType.contains(".")
-                    ? fieldType.substring(0, fieldType.lastIndexOf('.'))
-                    : statePackage;
-            String outerClass = StringUtils.toPascalCase(protoPackage);
-            return javaPackageBase + ".types." + typePathPrefix + "." + protoPackage + "." + outerClass;
+            return javaPackageBase + ".types." + typePathPrefix + "." + typeProtoPackage()
+                    + "." + javaOuterClass();
         }
 
         /**
@@ -127,11 +149,7 @@ public class TopicDiscovery {
          */
         public String getJavaQualifiedType() {
             String simpleType = StringUtils.extractSimpleTypeName(fieldType);
-            String protoPackage = fieldType.contains(".")
-                    ? fieldType.substring(0, fieldType.lastIndexOf('.'))
-                    : statePackage;
-            String outerClass = StringUtils.toPascalCase(protoPackage);
-            return outerClass + "." + simpleType;
+            return javaOuterClass() + "." + simpleType;
         }
     }
 
@@ -155,9 +173,58 @@ public class TopicDiscovery {
         Set<String> typesWithSpiffeId = new HashSet<>();
         collectTypesWithSpiffeIdField(root, typesWithSpiffeId);
 
+        // Every top-level name protoc sees per proto package. A package whose
+        // pascal-cased name is taken by one of them gets the "OuterClass" suffix.
+        Map<String, Set<String>> topLevelNames = new HashMap<>();
+        collectTopLevelNames(root, topLevelNames);
+
         List<TopicField> topics = new ArrayList<>();
         walkNode(root, topics, packagePathMap, typesWithSpiffeId);
+        for (TopicField topic : topics) {
+            topic.setJavaOuterClass(resolveOuterClass(topic.typeProtoPackage(), topLevelNames));
+        }
         return topics;
+    }
+
+    /**
+     * Mirrors protoc's outer class naming: the pascal-cased proto package, plus
+     * an "OuterClass" suffix when a top-level message, enum or service in that
+     * package already carries the name. tacplus emits the same suffix into
+     * java_outer_classname, so deriving without it produces an import of a class
+     * that was never generated.
+     */
+    private String resolveOuterClass(String protoPackage, Map<String, Set<String>> topLevelNames) {
+        String derived = StringUtils.toPascalCase(protoPackage);
+        Set<String> names = topLevelNames.get(protoPackage);
+        return names != null && names.contains(derived) ? derived + "OuterClass" : derived;
+    }
+
+    /**
+     * Walks the registry tree collecting, per proto package, the simple names of
+     * every top-level message, enum and service it declares.
+     */
+    private void collectTopLevelNames(JsonObject node, Map<String, Set<String>> result) {
+        for (String key : new String[] {"types", "enums", "services"}) {
+            if (!node.has(key)) {
+                continue;
+            }
+            for (JsonElement elem : node.getAsJsonArray(key)) {
+                JsonObject decl = elem.getAsJsonObject();
+                String pkg = getStr(decl, "package");
+                String name = getStr(decl, "name");
+                if (name.isEmpty()) {
+                    name = StringUtils.extractSimpleTypeName(getStr(decl, "fqn"));
+                }
+                if (!pkg.isEmpty() && !name.isEmpty()) {
+                    result.computeIfAbsent(pkg, k -> new HashSet<>()).add(name);
+                }
+            }
+        }
+        if (node.has("children")) {
+            for (JsonElement child : node.getAsJsonArray("children")) {
+                collectTopLevelNames(child.getAsJsonObject(), result);
+            }
+        }
     }
 
     /**
