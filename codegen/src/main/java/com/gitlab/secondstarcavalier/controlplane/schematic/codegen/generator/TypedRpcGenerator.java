@@ -91,37 +91,9 @@ public class TypedRpcGenerator {
         sb.append("public final class TypedEventBusBindings {\n");
         sb.append("    private TypedEventBusBindings() {}\n\n");
 
-        sb.append("    private static final String SERVICE_NAME = \"eventbus.EventBusTypedService\";\n\n");
-
         // Method descriptors for each topic
         for (TopicField topic : topics) {
             String qualifiedType = topic.getJavaQualifiedType();
-
-            for (String rpcPrefix : rpcPrefixes(topic)) {
-                String constName = toConstName(rpcPrefix);
-
-                // Publish method descriptor
-                sb.append("    public static final MethodDescriptor<").append(qualifiedType)
-                  .append(", Eventbus.PublishResponse>\n");
-                sb.append("        PUBLISH_").append(constName).append(" = MethodDescriptor\n");
-                sb.append("            .<").append(qualifiedType).append(", Eventbus.PublishResponse>newBuilder()\n");
-                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
-                sb.append("            .setFullMethodName(SERVICE_NAME + \"/Publish").append(rpcPrefix).append("\")\n");
-                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(")
-                  .append(qualifiedType).append(".getDefaultInstance()))\n");
-                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(Eventbus.PublishResponse.getDefaultInstance()))\n");
-                sb.append("            .build();\n\n");
-
-                // Subscribe method descriptor
-                sb.append("    public static final MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage>\n");
-                sb.append("        SUBSCRIBE_").append(constName).append(" = MethodDescriptor\n");
-                sb.append("            .<Eventbus.SubscribeRequest, DynamicMessage>newBuilder()\n");
-                sb.append("            .setType(MethodDescriptor.MethodType.BIDI_STREAMING)\n");
-                sb.append("            .setFullMethodName(SERVICE_NAME + \"/Subscribe").append(rpcPrefix).append("\")\n");
-                sb.append("            .setRequestMarshaller(ProtoUtils.marshaller(Eventbus.SubscribeRequest.getDefaultInstance()))\n");
-                sb.append("            .setResponseMarshaller(ProtoUtils.marshaller(SubscribeHandler.subscribeRecordDefaultInstance()))\n");
-                sb.append("            .build();\n\n");
-            }
 
             // Per-topic descriptors, the convention the generated PROTO actually
             // declares: <statePackage>.<StateName>StateService/PublishTo<Field>.
@@ -165,96 +137,6 @@ public class TypedRpcGenerator {
             }
         }
 
-        // bindAll method
-        sb.append("    /**\n");
-        sb.append("     * Creates a ServerServiceDefinition with all typed Publish/Subscribe RPCs.\n");
-        sb.append("     * Register this alongside EventBusServiceImpl on the gRPC server.\n");
-        sb.append("     */\n");
-        sb.append("    public static ServerServiceDefinition bindAll(\n");
-        sb.append("            KafkaPublisher publisher, KafkaSubscriber subscriber, TopicManager topicManager) {\n\n");
-        sb.append("        ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder(SERVICE_NAME);\n\n");
-
-        for (TopicField topic : topics) {
-            String topicConstName = toConstName(legacyRpcPrefix(topic));
-            String qualifiedType = topic.getJavaQualifiedType();
-
-            for (String rpcPrefix : rpcPrefixes(topic)) {
-                String constName = toConstName(rpcPrefix);
-
-                // Publish binding
-                sb.append("        // ").append(topic.getTopicName()).append("\n");
-                sb.append("        svc.addMethod(PUBLISH_").append(constName).append(",\n");
-                sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
-                sb.append("                (StreamObserver<Eventbus.PublishResponse> resp) ->\n");
-                sb.append("                    new PublishHandler<>(TopicRegistry.TOPIC_").append(topicConstName)
-                  .append(", publisher, topicManager, resp,\n");
-                if (topic.hasSpiffeIdField()) {
-                    // C2S topic: stamp the caller's verified subject SPIFFE id onto the proto message
-                    sb.append("                        (msg, spiffeId) -> msg.toBuilder().setSpiffeId(spiffeId).build())));\n\n");
-                } else {
-                    // S2S/internal topic: no identity stamping needed
-                    sb.append("                        null)));\n\n");
-                }
-
-                // Subscribe binding
-                sb.append("        svc.addMethod(SUBSCRIBE_").append(constName).append(",\n");
-                sb.append("            ServerCalls.asyncBidiStreamingCall(\n");
-                sb.append("                (StreamObserver<DynamicMessage> resp) ->\n");
-                sb.append("                    new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_")
-                  .append(topicConstName).append(", resp,\n");
-                sb.append("                        ").append(qualifiedType).append("::parseFrom)));\n\n");
-            }
-        }
-
-        sb.append("        return svc.build();\n");
-        sb.append("    }\n\n");
-
-        // addRemainingLazy method — lazy null-check version that skips specified descriptors.
-        // EventBusHandler calls this to auto-include any new topics without code changes.
-        sb.append("    /**\n");
-        sb.append("     * Adds lazy Publish/Subscribe bindings for all topics EXCEPT those whose\n");
-        sb.append("     * method descriptors appear in {@code skip}. Kafka clients are resolved\n");
-        sb.append("     * via suppliers at call time; returns UNAVAILABLE if not yet initialized.\n");
-        sb.append("     *\n");
-        sb.append("     * <p>Pass the descriptors for topics that need special handling\n");
-        sb.append("     * (e.g. trace dispatch) to exclude them from this auto-registration:\n");
-        sb.append("     * <pre>{@code\n");
-        sb.append("     *   TypedEventBusBindings.addRemainingLazy(svc,\n");
-        sb.append("     *       () -> publisher, () -> subscriber, () -> topicManager,\n");
-        sb.append("     *       PUBLISH_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM,\n");
-        sb.append("     *       SUBSCRIBE_AGENTIC_CODE_EVENT_BUS_EVENT_STREAM);\n");
-        sb.append("     * }</pre>\n");
-        sb.append("     */\n");
-        sb.append("    @SuppressWarnings(\"unchecked\")\n");
-        sb.append("    public static void addRemainingLazy(\n");
-        sb.append("            ServerServiceDefinition.Builder svc,\n");
-        sb.append("            Supplier<KafkaPublisher> publisher,\n");
-        sb.append("            Supplier<KafkaSubscriber> subscriber,\n");
-        sb.append("            Supplier<TopicManager> topicManager,\n");
-        sb.append("            java.util.function.Consumer<String> onTraceId,\n");
-        sb.append("            MethodDescriptor<?, ?>... skip) {\n");
-        sb.append("        Set<MethodDescriptor<?, ?>> skipSet = new HashSet<>(Arrays.asList(skip));\n\n");
-
-        for (TopicField topic : topics) {
-            String topicConstName = toConstName(legacyRpcPrefix(topic));
-            String qualifiedType = topic.getJavaQualifiedType();
-
-            for (String rpcPrefix : rpcPrefixes(topic)) {
-                String constName = toConstName(rpcPrefix);
-
-                sb.append("        // ").append(topic.getTopicName()).append("\n");
-                sb.append("        if (!skipSet.contains(PUBLISH_").append(constName).append(")) {\n");
-                emitLazyPublishBinding(sb, topic, "PUBLISH_" + constName, topicConstName, qualifiedType, "    ");
-                sb.append("        }\n");
-
-                sb.append("        if (!skipSet.contains(SUBSCRIBE_").append(constName).append(")) {\n");
-                emitLazySubscribeBinding(sb, "SUBSCRIBE_" + constName, topicConstName, qualifiedType, "    ");
-                sb.append("        }\n\n");
-            }
-        }
-
-        sb.append("    }\n\n");
-
         // buildPerTopicLazy — one ServerServiceDefinition PER TOPIC.
         //
         // It cannot be more entries on the existing builder: io.grpc requires
@@ -292,7 +174,7 @@ public class TypedRpcGenerator {
         // passes no trace-id extractor, so the trace topic does not dispatch
         // traces about itself.
         for (TopicField topic : topics) {
-            String topicConstName = toConstName(legacyRpcPrefix(topic));
+            String topicConstName = toConstName(topicRegistryStem(topic));
             String qualifiedType = topic.getJavaQualifiedType();
             String perTopicConst = perTopicConstName(topic);
 
@@ -404,6 +286,17 @@ public class TypedRpcGenerator {
         return toConstName(topic.getStateName() + topic.getFieldPascal());
     }
 
+    /**
+     * Names the TopicRegistry constant for a topic (TOPIC_&lt;STEM&gt;). This is the
+     * Kafka topic identity, NOT an RPC name — it happens to be spelled like the
+     * old flat RPC stem, which is why the two shared a helper until the flat
+     * RPC names were removed. It must not move: renaming it renames a live Kafka
+     * topic and orphans its retained events.
+     */
+    private static String topicRegistryStem(TopicField topic) {
+        return topic.getStateName() + topic.getFieldPascal();
+    }
+
     private static String toConstName(String pascalCase) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < pascalCase.length(); i++) {
@@ -416,27 +309,6 @@ public class TypedRpcGenerator {
         return sb.toString();
     }
 
-    private static String legacyRpcPrefix(TopicField topic) {
-        return topic.getStateName() + topic.getFieldPascal();
-    }
 
-    private static String canonicalRpcPrefix(TopicField topic) {
-        String packagePrefix = StringUtils.toPascalCase(topic.getStatePackage());
-        String legacy = legacyRpcPrefix(topic);
-        if (packagePrefix == null || packagePrefix.isEmpty()) {
-            return legacy;
-        }
-        return packagePrefix + legacy;
-    }
 
-    private static List<String> rpcPrefixes(TopicField topic) {
-        List<String> prefixes = new ArrayList<>();
-        String legacy = legacyRpcPrefix(topic);
-        String canonical = canonicalRpcPrefix(topic);
-        prefixes.add(legacy);
-        if (!canonical.equals(legacy)) {
-            prefixes.add(canonical);
-        }
-        return prefixes;
-    }
 }

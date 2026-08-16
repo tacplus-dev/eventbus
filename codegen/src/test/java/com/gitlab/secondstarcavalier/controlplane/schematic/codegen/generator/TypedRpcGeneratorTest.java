@@ -36,19 +36,22 @@ class TypedRpcGeneratorTest {
         String content = Files.readString(outputFile);
 
         // Method descriptors
-        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"),
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_EVENT_STREAM"),
                 "should contain publish method descriptor");
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"),
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_EVENT_STREAM"),
                 "should contain subscribe method descriptor");
-        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_EVENT_STREAM"),
                 "should contain package-prefixed publish alias");
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"),
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_EVENT_STREAM"),
                 "should contain package-prefixed subscribe alias");
-        assertTrue(content.contains("/SubscribeAegisAegisStateEventStream"),
-                "package-prefixed subscribe alias should match generated subscriber naming");
+        // The wire method is now the per-topic one. The package-prefixed flat
+        // alias it used to assert was one of two flat spellings the broker
+        // carried; both are gone.
+        assertTrue(content.contains("/SubscribeToEventStream"),
+                "subscribe method must match the per-topic name the proto declares");
 
         // Service name
-        assertTrue(content.contains("eventbus.EventBusTypedService"),
+        assertFalse(content.contains("eventbus.EventBusTypedService"),
                 "should reference typed service name");
         assertTrue(content.contains("import com.google.protobuf.DynamicMessage;"),
                 "subscribe responses should use the metadata envelope type");
@@ -62,7 +65,11 @@ class TypedRpcGeneratorTest {
                 "subscribe method descriptors must not stream bare payloads");
 
         // bindAll method
-        assertTrue(content.contains("bindAll"), "should contain bindAll method");
+        // bindAll is gone with the flat service it built. Per-topic definitions
+        // are returned by buildPerTopicLazy, one per topic, because io.grpc ties
+        // a method's service prefix to the definition holding it.
+        assertTrue(content.contains("buildPerTopicLazy"), "should expose the per-topic builder");
+        assertFalse(content.contains("ServerServiceDefinition bindAll"), "flat bindAll must be gone");
 
         // Uses PublishHandler and SubscribeHandler
         assertTrue(content.contains("PublishHandler"), "should reference PublishHandler");
@@ -106,9 +113,9 @@ class TypedRpcGeneratorTest {
 
         // Additive, not a swap. Every publisher that has not yet regenerated is
         // still calling the flat name; removing it here breaks them at runtime.
-        assertTrue(content.contains("eventbus.EventBusTypedService"),
+        assertFalse(content.contains("eventbus.EventBusTypedService"),
                 "the flat service must remain bound until every publisher has regenerated");
-        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"),
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_EVENT_STREAM"),
                 "the flat descriptors must remain");
     }
 
@@ -170,14 +177,14 @@ class TypedRpcGeneratorTest {
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
         String content = Files.readString(outputFile);
 
-        assertTrue(content.contains("PUBLISH_AEGIS_STATE_EVENT_STREAM"));
-        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_EVENT_STREAM"));
-        assertTrue(content.contains("PUBLISH_AEGIS_STATE_CONVERSATIONS"));
-        assertTrue(content.contains("PUBLISH_AEGIS_AEGIS_STATE_CONVERSATIONS"));
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_EVENT_STREAM"));
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_EVENT_STREAM"));
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_STATE_CONVERSATIONS"));
-        assertTrue(content.contains("SUBSCRIBE_AEGIS_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("PUBLISH_TO_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_EVENT_STREAM"));
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_CONVERSATIONS"));
+        assertTrue(content.contains("SUBSCRIBE_TO_AEGIS_STATE_CONVERSATIONS"));
     }
 
     @Test
@@ -197,13 +204,17 @@ class TypedRpcGeneratorTest {
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
         String content = Files.readString(outputFile);
 
-        assertTrue(content.contains("/PublishAgenticCodeEventBusEventStream"),
-                "legacy publisher method should remain registered");
-        assertTrue(content.contains("/PublishClaudesensorAgenticCodeEventBusEventStream"),
+        assertTrue(content.contains("/PublishToEventStream"),
+                "per-topic publisher method must be registered");
+        assertTrue(content.contains("claudesensor.AgenticCodeEventBusStateService"),
                 "canonical publisher method should include proto package prefix");
-        assertTrue(content.contains("/SubscribeAgenticCodeEventBusEventStream"),
-                "legacy subscriber method should remain registered");
-        assertTrue(content.contains("/SubscribeClaudesensorAgenticCodeEventBusEventStream"),
-                "canonical subscriber method should include proto package prefix");
+        assertTrue(content.contains("/SubscribeToEventStream"),
+                "per-topic subscriber method must be registered");
+        // Both flat spellings — bare and package-prefixed — are gone. The
+        // package now qualifies the SERVICE, not the method name.
+        assertFalse(content.contains("SubscribeAgenticCodeEventBusEventStream"),
+                "flat subscriber method must be gone");
+        assertFalse(content.contains("SubscribeClaudesensorAgenticCodeEventBusEventStream"),
+                "package-prefixed flat subscriber method must be gone");
     }
 }

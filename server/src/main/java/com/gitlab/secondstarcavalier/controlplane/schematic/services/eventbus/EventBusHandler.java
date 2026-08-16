@@ -215,23 +215,17 @@ public class EventBusHandler implements Handler {
 		// Typed Pub/Sub RPCs — always register so the endpoints exist from startup.
 		// Kafka may not be initialized yet (it starts after TLS delivery), so each
 		// handler lambda checks at call time and returns UNAVAILABLE if not ready.
-		ServerServiceDefinition typed = buildLazyTypedBindings();
-		ServerServiceDefinition intercepted = ServerInterceptors.intercept(
-				typed, Auth.requestIdInterceptor());
-		services.add(intercepted);
-
-		// The same topics again, under the per-topic service names the generated
-		// proto actually declares (<pkg>.<Topic>StateService/PublishTo<Field>).
-		// Registered as separate definitions because io.grpc requires a method's
-		// service prefix to match the definition holding it.
 		//
-		// Both conventions are served on purpose. Generated clients are split
-		// across the two — agentsensor and gitlabconnector already emit
-		// per-topic and have been getting "Method not found", while llmsensor
-		// emits the flat name — so binding both is what makes every existing
-		// client work at once, without a flag day where a regenerated publisher
-		// calls a path the deployed broker lacks. The flat names come out once
-		// every publisher has regenerated onto per-topic.
+		// One ServerServiceDefinition PER TOPIC, under the service names the
+		// generated proto declares (<pkg>.<Topic>StateService). The flat
+		// broker-qualified service that used to be registered alongside these is
+		// gone: it was declared in no proto, so nothing but a hardcoding client
+		// could reach it, and every generated caller now emits the per-topic name.
+		//
+		// Trace topics are included here rather than bound separately. The
+		// generated body passes no trace-id extractor for a TraceEvent type, so the
+		// trace topic still does not dispatch traces about itself — which is what
+		// the old hand-written trace binding existed to arrange.
 		for (ServerServiceDefinition perTopic : TypedEventBusBindings.buildPerTopicLazy(
 				() -> publisher, () -> subscriber, () -> topicManager, this::dispatchTrace)) {
 			services.add(ServerInterceptors.intercept(perTopic, Auth.requestIdInterceptor()));
@@ -263,35 +257,6 @@ public class EventBusHandler implements Handler {
 		}
 	}
 
-	/**
-	 * Builds typed Publish/Subscribe gRPC bindings that resolve Kafka clients
-	 * lazily at call time. Returns UNAVAILABLE before Kafka is initialized.
-	 */
-	private ServerServiceDefinition buildLazyTypedBindings() {
-		ServerServiceDefinition.Builder svc = ServerServiceDefinition.builder("eventbus.EventBusTypedService");
-
-		// Trace topics are framework infrastructure (not a vservice); bind them
-		// explicitly so they don't self-dispatch traces.
-		addTraceBindings(svc,
-			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS);
-		addTraceBindings(svc,
-			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.SUBSCRIBE_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS);
-
-		// Every vservice topic is auto-registered with identity-stamping (C2S) and
-		// generic trace dispatch — no per-vservice code. New sensors appear here
-		// automatically after codegen rebuild; this handler names no vservice.
-		TypedEventBusBindings.addRemainingLazy(svc,
-			() -> publisher, () -> subscriber, () -> topicManager,
-			this::dispatchTrace,
-			TypedEventBusBindings.PUBLISH_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.SUBSCRIBE_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.PUBLISH_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS,
-			TypedEventBusBindings.SUBSCRIBE_TRACE_TRACE_EVENT_BUS_TRACE_EVENTS);
-
-		return svc.build();
-	}
 
 	/**
 	 * Generic trace dispatch: emits an internal-request TraceEvent for the given
@@ -311,31 +276,6 @@ public class EventBusHandler implements Handler {
 			.build());
 	}
 
-	private void addTraceBindings(ServerServiceDefinition.Builder svc,
-			MethodDescriptor<Trace.TraceEvent, Eventbus.PublishResponse> publishMethod,
-			MethodDescriptor<Eventbus.SubscribeRequest, DynamicMessage> subscribeMethod) {
-		svc.addMethod(publishMethod,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<Eventbus.PublishResponse> resp) -> {
-					if (publisher == null || topicManager == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
-					}
-					return new PublishHandler<>(TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, publisher, topicManager, resp,
-						null, null, null);
-				}));
-
-		svc.addMethod(subscribeMethod,
-			ServerCalls.asyncBidiStreamingCall(
-				(StreamObserver<DynamicMessage> resp) -> {
-					if (subscriber == null) {
-						resp.onError(Status.UNAVAILABLE.withDescription("Kafka not yet initialized").asRuntimeException());
-						return noOpObserver();
-					}
-					return new SubscribeHandler<>(subscriber, TopicRegistry.TOPIC_TRACE_EVENT_BUS_TRACE_EVENTS, resp,
-						Trace.TraceEvent::parseFrom);
-				}));
-	}
 
 	@SuppressWarnings("unchecked")
 	private static <T> StreamObserver<T> noOpObserver() {
