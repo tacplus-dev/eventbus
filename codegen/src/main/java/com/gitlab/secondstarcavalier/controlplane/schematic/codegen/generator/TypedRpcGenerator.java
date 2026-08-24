@@ -7,8 +7,10 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -193,6 +195,8 @@ public class TypedRpcGenerator {
         sb.append("        return defs;\n");
         sb.append("    }\n\n");
 
+        emitRegisterMethodAuth(sb, topics);
+
         // Private noOpObserver helper used by addRemainingLazy
         sb.append("    @SuppressWarnings(\"unchecked\")\n");
         sb.append("    private static <T> StreamObserver<T> noOpObserver() {\n");
@@ -210,6 +214,80 @@ public class TypedRpcGenerator {
                 .resolve("generated");
         Files.createDirectories(outDir);
         Files.writeString(outDir.resolve("TypedEventBusBindings.java"), sb.toString());
+    }
+
+    /**
+     * Emits registerMethodAuth(Authorizer), the per-topic counterpart of the
+     * registerMethodAuth tacplus generates into each service wrapper. The
+     * per-topic services are hosted here but their wrappers belong to their
+     * owning service, so nothing else registers their auth_services patterns —
+     * and without them the Authorizer denies every S2S caller.
+     *
+     * <p>Patterns come from the registry's per-rpc auth_services, which is
+     * tacplus's own computation of (spec.service_s2s); nothing is derived here.
+     */
+    private void emitRegisterMethodAuth(StringBuilder sb, List<TopicField> topics) {
+        Map<String, List<String>> byRpc = collectMethodAuth(topics);
+
+        sb.append("    /**\n");
+        sb.append("     * Registers the per-topic auth_services patterns with the chassis\n");
+        sb.append("     * Authorizer. Must be called before the per-topic definitions from\n");
+        sb.append("     * {@link #buildPerTopicLazy} are served, or every S2S caller is denied.\n");
+        sb.append("     */\n");
+        sb.append("    public static void registerMethodAuth(")
+          .append(packageBase).append(".chassis.grpcserver.Authorizer authorizer) {\n");
+        for (Map.Entry<String, List<String>> e : byRpc.entrySet()) {
+            sb.append("        authorizer.setMethodAuth(\"").append(e.getKey()).append("\", List.of(");
+            for (int i = 0; i < e.getValue().size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                sb.append("\"").append(e.getValue().get(i)).append("\"");
+            }
+            sb.append("));\n");
+        }
+        sb.append("    }\n\n");
+    }
+
+    /**
+     * Flattens every topic's per-rpc auth_services into the rpc-name-keyed form
+     * {@code Authorizer.setMethodAuth} takes.
+     *
+     * <p>Two hard failures rather than a silent weakening: a topic whose rpcs
+     * declare no auth_services would be served with no policy at all, and two
+     * topics whose rpcs share a name would have one policy overwrite the other
+     * (the Authorizer keys on the bare rpc name, not the full method).
+     */
+    private Map<String, List<String>> collectMethodAuth(List<TopicField> topics) {
+        Map<String, List<String>> byRpc = new LinkedHashMap<>();
+        List<String> unpoliced = new ArrayList<>();
+        List<String> collisions = new ArrayList<>();
+        for (TopicField topic : topics) {
+            Map<String, List<String>> auth = topic.getMethodAuthServices();
+            if (auth.isEmpty()) {
+                unpoliced.add(topic.getPerTopicServiceName() + " (" + topic.getTopicName() + ")");
+                continue;
+            }
+            for (Map.Entry<String, List<String>> e : auth.entrySet()) {
+                List<String> existing = byRpc.get(e.getKey());
+                if (existing != null && !existing.equals(e.getValue())) {
+                    collisions.add(e.getKey() + ": " + existing + " vs " + e.getValue());
+                }
+                byRpc.put(e.getKey(), e.getValue());
+            }
+        }
+        if (!unpoliced.isEmpty()) {
+            throw new IllegalStateException(
+                    "eventbus topics with no auth_services in the registry: " + unpoliced
+                    + " — declare (spec.service_s2s) auth_services on the topic's state service");
+        }
+        if (!collisions.isEmpty()) {
+            throw new IllegalStateException(
+                    "eventbus topic rpc names collide with differing auth_services: " + collisions
+                    + " — the Authorizer keys auth_services by bare rpc name, so one would silently"
+                    + " overwrite the other; rename the topic boundary");
+        }
+        return byRpc;
     }
 
     /**
@@ -281,11 +359,7 @@ public class TypedRpcGenerator {
      * generated proto: {@code <statePackage>.<StateName>StateService}.
      */
     private static String perTopicServiceName(TopicField topic) {
-        // getDeclaringPackage, NOT getStatePackage. The latter is the event
-        // TYPE's package and produced "trace.TraceEventBusStateService" — a name
-        // no proto declares — while the generated proto puts the service in
-        // package agentsensor alongside the message.
-        return topic.getDeclaringPackage() + "." + topic.getStateName() + "StateService";
+        return topic.getPerTopicServiceName();
     }
 
     /** Constant-name stem for the per-topic descriptors. */

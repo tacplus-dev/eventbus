@@ -9,7 +9,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -17,6 +19,21 @@ class TypedRpcGeneratorTest {
 
     @TempDir
     Path tempDir;
+
+    /**
+     * Attaches the per-topic auth_services a real run reads out of the registry.
+     * The generator refuses to emit a topic that declares none, so a hand-built
+     * TopicField has to carry one.
+     */
+    private static List<TopicDiscovery.TopicField> withAuth(List<TopicDiscovery.TopicField> topics) {
+        for (TopicDiscovery.TopicField t : topics) {
+            Map<String, List<String>> auth = new LinkedHashMap<>();
+            auth.put(t.getPublishRpcName(), List.of("someservice"));
+            auth.put(t.getSubscribeRpcName(), List.of("someservice"));
+            t.setMethodAuthServices(auth);
+        }
+        return topics;
+    }
 
     @Test
     void generate_createsBindingsFile() throws IOException {
@@ -27,7 +44,7 @@ class TypedRpcGeneratorTest {
                 "services/aegis");
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
-        gen.generate(List.of(topic));
+        gen.generate(withAuth(List.of(topic)));
 
         Path outputFile = tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
@@ -96,7 +113,7 @@ class TypedRpcGeneratorTest {
                 "services/aegis");
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
-        gen.generate(List.of(topic));
+        gen.generate(withAuth(List.of(topic)));
 
         String content = Files.readString(tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
@@ -138,7 +155,7 @@ class TypedRpcGeneratorTest {
                 "agentsensor");
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
-        gen.generate(List.of(topic));
+        gen.generate(withAuth(List.of(topic)));
 
         String content = Files.readString(tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
@@ -171,7 +188,7 @@ class TypedRpcGeneratorTest {
         );
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
-        gen.generate(topics);
+        gen.generate(withAuth(topics));
 
         Path outputFile = tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
@@ -198,7 +215,7 @@ class TypedRpcGeneratorTest {
                 true);
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services.model");
-        gen.generate(List.of(topic));
+        gen.generate(withAuth(List.of(topic)));
 
         Path outputFile = tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java");
@@ -216,5 +233,72 @@ class TypedRpcGeneratorTest {
                 "flat subscriber method must be gone");
         assertFalse(content.contains("SubscribeClaudesensorAgenticCodeEventBusEventStream"),
                 "package-prefixed flat subscriber method must be gone");
+    }
+
+    @Test
+    void generate_emitsPerTopicAuthServices() throws IOException {
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream",
+                "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream",
+                "services/aegis");
+        Map<String, List<String>> auth = new LinkedHashMap<>();
+        auth.put("PublishToEventStream", List.of("aegis"));
+        auth.put("SubscribeToEventStream", List.of("aegis", "sentinel"));
+        topic.setMethodAuthServices(auth);
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(List.of(topic));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+        assertTrue(content.contains(
+                        "authorizer.setMethodAuth(\"PublishToEventStream\", List.of(\"aegis\"));"),
+                "publish policy should come straight from the registry: " + content);
+        assertTrue(content.contains(
+                        "authorizer.setMethodAuth(\"SubscribeToEventStream\", List.of(\"aegis\", \"sentinel\"));"),
+                "subscribe policy should carry every declared caller: " + content);
+    }
+
+    @Test
+    void generate_refusesATopicWithNoAuthServices() {
+        // Fail-closed at generation: a topic with no policy would otherwise be
+        // served with none, which is exactly the F15 hole.
+        TopicDiscovery.TopicField topic = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream",
+                "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream",
+                "services/aegis");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> gen.generate(List.of(topic)));
+        assertTrue(e.getMessage().contains("aegis.AegisStateStateService"), e.getMessage());
+    }
+
+    @Test
+    void generate_refusesCollidingRpcNamesWithDifferentPolicies() {
+        // The Authorizer keys auth_services by bare rpc name, so two topics
+        // spelling the same rpc would have one policy overwrite the other.
+        TopicDiscovery.TopicField a = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "stream", "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.Stream", "services/aegis");
+        Map<String, List<String>> authA = new LinkedHashMap<>();
+        authA.put("PublishToStream", List.of("aegis"));
+        authA.put("SubscribeToStream", List.of("aegis"));
+        a.setMethodAuthServices(authA);
+
+        TopicDiscovery.TopicField b = new TopicDiscovery.TopicField(
+                "OtherState", "other", "stream", "other.OtherEvent",
+                "services.other.other.OtherState.Stream", "services/other");
+        Map<String, List<String>> authB = new LinkedHashMap<>();
+        authB.put("PublishToStream", List.of("other"));
+        authB.put("SubscribeToStream", List.of("other"));
+        b.setMethodAuthServices(authB);
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> gen.generate(List.of(a, b)));
+        assertTrue(e.getMessage().contains("PublishToStream"), e.getMessage());
     }
 }

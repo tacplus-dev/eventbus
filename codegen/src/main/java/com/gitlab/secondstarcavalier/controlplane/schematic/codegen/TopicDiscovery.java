@@ -44,6 +44,9 @@ public class TopicDiscovery {
         private final boolean hasSpiffeIdField; // true if the type has a string spiffe_id field (C2S topics)
         private final boolean hasActorSpiffeIdField; // true if the type has a string actor_spiffe_id field (item 6 Piece A)
         private String javaOuterClass;      // resolved from the registry; see setJavaOuterClass
+        // rpc name -> auth_services patterns, read from the registry entry for this
+        // topic's generated <Topic>StateService. Resolved in discoverTopics().
+        private Map<String, List<String>> methodAuthServices = new LinkedHashMap<>();
 
         public TopicField(String stateName, String statePackage, String fieldName,
                           String fieldType, String topicName, String packagePath) {
@@ -96,6 +99,33 @@ public class TopicDiscovery {
          * generated proto puts the per-topic {@code <Topic>StateService} in.
          */
         public String getDeclaringPackage() { return declaringPackage; }
+        /**
+         * The per-topic gRPC service name, matching what tacplus declares in the
+         * generated proto: {@code <declaringPackage>.<StateName>StateService}.
+         * getDeclaringPackage, NOT getStatePackage — the latter is the event
+         * TYPE's package and produces "trace.TraceEventBusStateService", a name
+         * no proto declares.
+         */
+        public String getPerTopicServiceName() {
+            return declaringPackage + "." + stateName + "StateService";
+        }
+
+        /** The topic's publish rpc name, as the generated proto declares it. */
+        public String getPublishRpcName() { return "PublishTo" + getFieldPascal(); }
+
+        /** The topic's subscribe rpc name, as the generated proto declares it. */
+        public String getSubscribeRpcName() { return "SubscribeTo" + getFieldPascal(); }
+
+        public void setMethodAuthServices(Map<String, List<String>> m) { this.methodAuthServices = m; }
+
+        /**
+         * rpc name -> the auth_services patterns declared on that rpc by
+         * (spec.service_s2s) in the generated proto. This is the policy the
+         * chassis Authorizer enforces for the topic; empty means the registry
+         * declared none.
+         */
+        public Map<String, List<String>> getMethodAuthServices() { return methodAuthServices; }
+
         public String getFieldName() { return fieldName; }
         public String getFieldType() { return fieldType; }
         public String getTopicName() { return topicName; }
@@ -196,14 +226,78 @@ public class TopicDiscovery {
         Map<String, Set<String>> topLevelNames = new HashMap<>();
         collectTopLevelNames(root, topLevelNames);
 
+        // grpc_path -> auth_services, the per-rpc S2S policy tacplus computes from
+        // (spec.service_s2s). The per-topic state services are hosted here but
+        // their wrappers are generated for their owning service, so this registry
+        // entry is the only place their policy is readable from.
+        Map<String, List<String>> rpcAuthServices = new HashMap<>();
+        collectRpcAuthServices(root, rpcAuthServices);
+
         List<TopicField> topics = new ArrayList<>();
         walkNode(root, topics, packagePathMap, typesWithSpiffeId, typesWithActorSpiffeId);
         for (TopicField topic : topics) {
             topic.setJavaOuterClass(resolveOuterClass(topic.typeProtoPackage(), topLevelNames));
+            topic.setMethodAuthServices(resolveMethodAuth(topic, rpcAuthServices));
         }
         return topics;
     }
 
+
+    /**
+     * Resolves the auth_services policy for a topic's two rpcs by their grpc_path
+     * in the registry. A topic whose rpcs carry no policy yields an empty map;
+     * the caller decides what that means.
+     */
+    private Map<String, List<String>> resolveMethodAuth(TopicField topic,
+                                                        Map<String, List<String>> rpcAuthServices) {
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        String svc = topic.getPerTopicServiceName();
+        for (String rpc : new String[] {topic.getPublishRpcName(), topic.getSubscribeRpcName()}) {
+            List<String> patterns = rpcAuthServices.get("/" + svc + "/" + rpc);
+            if (patterns != null && !patterns.isEmpty()) {
+                result.put(rpc, patterns);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Walks the registry tree collecting every rpc's auth_services keyed by its
+     * grpc_path ("/pkg.Service/Rpc").
+     */
+    private void collectRpcAuthServices(JsonObject node, Map<String, List<String>> result) {
+        collectRpcAuthServicesFrom(node, result);
+        if (node.has("services")) {
+            for (JsonElement elem : node.getAsJsonArray("services")) {
+                collectRpcAuthServicesFrom(elem.getAsJsonObject(), result);
+            }
+        }
+        if (node.has("children")) {
+            for (JsonElement child : node.getAsJsonArray("children")) {
+                collectRpcAuthServices(child.getAsJsonObject(), result);
+            }
+        }
+    }
+
+    private void collectRpcAuthServicesFrom(JsonObject node, Map<String, List<String>> result) {
+        if (!node.has("rpcs")) {
+            return;
+        }
+        for (JsonElement elem : node.getAsJsonArray("rpcs")) {
+            JsonObject rpc = elem.getAsJsonObject();
+            String grpcPath = getStr(rpc, "grpc_path");
+            if (grpcPath.isEmpty() || !rpc.has("auth_services")) {
+                continue;
+            }
+            List<String> patterns = new ArrayList<>();
+            for (JsonElement p : rpc.getAsJsonArray("auth_services")) {
+                patterns.add(p.getAsString());
+            }
+            if (!patterns.isEmpty()) {
+                result.put(grpcPath, patterns);
+            }
+        }
+    }
 
     /**
      * Mirrors protoc's outer class naming: the pascal-cased proto package, plus

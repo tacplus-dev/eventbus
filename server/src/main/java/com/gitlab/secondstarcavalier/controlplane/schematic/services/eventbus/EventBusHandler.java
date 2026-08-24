@@ -27,6 +27,7 @@ import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.mo
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.MetaData;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.collection.CollectionRuntime;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Auth;
+import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.grpcserver.Authorizer;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.x509.ImmutableCertChain;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.s2sm.Handler;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.s2sm.ServiceManager;
@@ -40,6 +41,7 @@ import com.google.protobuf.DynamicMessage;
 import io.grpc.ManagedChannel;
 import io.grpc.MethodDescriptor;
 import io.grpc.Metadata;
+import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
 import io.grpc.ServerServiceDefinition;
 import io.grpc.Status;
@@ -226,9 +228,29 @@ public class EventBusHandler implements Handler {
 		// generated body passes no trace-id extractor for a TraceEvent type, so the
 		// trace topic still does not dispatch traces about itself — which is what
 		// the old hand-written trace binding existed to arrange.
+		//
+		// Per-topic AUTHORIZATION. The ServiceManager wraps everything returned
+		// here in enforcingInterceptor(), which verifies signature, audience and
+		// token class but explicitly does NOT check entitlements — so on its own
+		// any holder of an eventbus-audience token could publish to and subscribe
+		// from every topic, the platform trace topic included. authorizingInterceptor
+		// applies the same check a generated service wrapper performs: the
+		// auth_services patterns the generated proto declares per topic for S2S
+		// callers, service_entitlements for user callers. Fail-closed — a method
+		// with no registered pattern is denied, and the generator refuses to emit
+		// a topic that declares none.
+		Authorizer authorizer = sm.getAuthorizer();
+		if (authorizer == null) {
+			throw new IllegalStateException(
+					"additionalServices() called before the Authorizer was built — "
+					+ "per-topic authorization cannot be enforced");
+		}
+		TypedEventBusBindings.registerMethodAuth(authorizer);
+		// Last interceptor runs first, so authorization precedes request-id tagging.
+		ServerInterceptor topicAuth = authorizer.authorizingInterceptor();
 		for (ServerServiceDefinition perTopic : TypedEventBusBindings.buildPerTopicLazy(
 				() -> publisher, () -> subscriber, () -> topicManager, this::dispatchTrace)) {
-			services.add(ServerInterceptors.intercept(perTopic, Auth.requestIdInterceptor()));
+			services.add(ServerInterceptors.intercept(perTopic, Auth.requestIdInterceptor(), topicAuth));
 		}
 		return services;
 	}
