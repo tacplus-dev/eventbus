@@ -4,6 +4,10 @@ package com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.k
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -44,8 +48,12 @@ public class KafkaSubscriber {
     /**
      * Maximum number of consumer.poll() attempts the partition-assignment
      * loop in {@link Session#runLoop} will make before failing the subscribe.
-     * Each attempt blocks for {@link #ASSIGNMENT_POLL_MS}. Total budget is
-     * {@code ASSIGNMENT_MAX_ATTEMPTS * ASSIGNMENT_POLL_MS} milliseconds.
+     * Each attempt asks for {@link #ASSIGNMENT_POLL_MS}. Total budget is
+     * {@code ASSIGNMENT_MAX_ATTEMPTS * ASSIGNMENT_POLL_MS} milliseconds,
+     * enforced as a wall-clock deadline by {@link #ASSIGNMENT_WATCHDOG} — the
+     * attempt count alone cannot enforce it, because {@code poll(timeout)}
+     * does not bound the JoinGroup/SyncGroup handshake and can block far past
+     * its argument when the consumer group is stuck rebalancing.
      * Override via env var {@code EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS}.
      */
     static final int ASSIGNMENT_MAX_ATTEMPTS =
@@ -57,6 +65,20 @@ public class KafkaSubscriber {
      */
     static final long ASSIGNMENT_POLL_MS =
             longFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_POLL_MS", 5000L);
+
+    /**
+     * Arms the wall-clock deadline on each session's partition-assignment wait.
+     * {@code KafkaConsumer.wakeup()} is the only thread-safe consumer method,
+     * so this is a safe way to break a poll() that is blocked inside a
+     * rebalance. One shared daemon thread — each session arms a single-shot
+     * task and cancels it as soon as the wait ends.
+     */
+    private static final ScheduledExecutorService ASSIGNMENT_WATCHDOG =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "eventbus-assignment-watchdog");
+                t.setDaemon(true);
+                return t;
+            });
 
     private final String bootstrapServers;
 
@@ -180,6 +202,8 @@ public class KafkaSubscriber {
         private final KafkaConsumer<String, byte[]> consumer;
         private final AtomicReference<SeekParams> pending = new AtomicReference<>();
         private volatile boolean closed;
+        /** Set by the assignment watchdog so a deadline wakeup is not mistaken for a resubscribe. */
+        private volatile boolean assignmentDeadlineExpired;
 
         private Session(String topic, KafkaConsumer<String, byte[]> consumer) {
             this.topic = topic;
@@ -236,22 +260,45 @@ public class KafkaSubscriber {
             // Wait for partition assignment — the initial poll in createSession may not
             // have been long enough for group rebalancing to complete.
             if (partitions.isEmpty()) {
-                for (int attempt = 0; attempt < ASSIGNMENT_MAX_ATTEMPTS && !closed; attempt++) {
-                    logger.info("Waiting for partition assignment on topic {} (attempt {}/{}, poll {}ms)",
-                            topic, attempt + 1, ASSIGNMENT_MAX_ATTEMPTS, ASSIGNMENT_POLL_MS);
-                    try {
-                        consumer.poll(Duration.ofMillis(ASSIGNMENT_POLL_MS));
-                    } catch (org.apache.kafka.common.errors.WakeupException e) {
-                        if (closed) return;
+                // The attempt count cannot bound this wait on its own: poll(timeout)
+                // does not bound the JoinGroup/SyncGroup handshake, so a group stuck
+                // rebalancing parks the loop inside attempt 1 indefinitely. Arm a
+                // wall-clock deadline that wakes the blocked poll() up.
+                long budgetMs = ASSIGNMENT_MAX_ATTEMPTS * ASSIGNMENT_POLL_MS;
+                long waitStartedNanos = System.nanoTime();
+                ScheduledFuture<?> watchdog = ASSIGNMENT_WATCHDOG.schedule(() -> {
+                    assignmentDeadlineExpired = true;
+                    logger.warn("Partition assignment deadline of {}ms expired on topic {}, waking consumer",
+                            budgetMs, topic);
+                    consumer.wakeup();
+                }, budgetMs, TimeUnit.MILLISECONDS);
+                try {
+                    for (int attempt = 0;
+                         attempt < ASSIGNMENT_MAX_ATTEMPTS && !closed && !assignmentDeadlineExpired;
+                         attempt++) {
+                        logger.info("Waiting for partition assignment on topic {} (attempt {}/{}, poll {}ms)",
+                                topic, attempt + 1, ASSIGNMENT_MAX_ATTEMPTS, ASSIGNMENT_POLL_MS);
+                        try {
+                            consumer.poll(Duration.ofMillis(ASSIGNMENT_POLL_MS));
+                        } catch (org.apache.kafka.common.errors.WakeupException e) {
+                            if (closed) return;
+                            // A deadline wakeup falls through to the loop guard, which
+                            // exits so the timeout below is thrown. Any other wakeup
+                            // (a resubscribe) just costs this attempt.
+                        }
+                        partitions = consumer.assignment();
+                        if (!partitions.isEmpty()) break;
                     }
-                    partitions = consumer.assignment();
-                    if (!partitions.isEmpty()) break;
+                } finally {
+                    watchdog.cancel(false);
                 }
                 if (partitions.isEmpty()) {
+                    long waitedMs = (System.nanoTime() - waitStartedNanos) / 1_000_000;
                     throw new PartitionAssignmentTimeoutException(
                             "No partitions assigned for topic " + topic + " after "
+                                    + waitedMs + "ms (budget " + budgetMs + "ms: "
                                     + ASSIGNMENT_MAX_ATTEMPTS + " attempts of "
-                                    + ASSIGNMENT_POLL_MS + "ms each");
+                                    + ASSIGNMENT_POLL_MS + "ms each)");
                 }
             }
             sessionsAssigned.incrementAndGet();
@@ -414,6 +461,12 @@ public class KafkaSubscriber {
         // Allow time for group rebalancing to complete before timing out.
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "5000");
+        // Bound how long a wedged consumer can hold its partitions before the
+        // coordinator evicts it. The 300000ms default meant a subscriber stuck
+        // in a rebalance sat on the group for 5 minutes; 60000ms matches the
+        // partition-assignment budget above and is 2x session.timeout.ms, well
+        // clear of the 500ms poll cadence of the steady-state loop.
+        props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "60000");
 
         // Retry/reconnect backoff — prevents tight FindCoordinator loops from
         // overwhelming the KRaft controller when coordinator lookup fails.
