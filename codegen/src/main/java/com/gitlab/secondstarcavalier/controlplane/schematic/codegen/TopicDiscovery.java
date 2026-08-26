@@ -317,10 +317,9 @@ public class TopicDiscovery {
             for (JsonElement elem : boundaries) {
                 JsonObject boundary = elem.getAsJsonObject();
 
-                String tag = getStr(boundary, "tag");
                 String graphType = getStr(boundary, "graph_type");
 
-                if ("eventbus".equals(tag) && "topic".equals(graphType)) {
+                if (hasLabel(boundary, "eventbus") && "topic".equals(graphType)) {
                     String stateRoot = getStr(boundary, "state_root");
                     String fieldName = getStr(boundary, "boundary");
                     String typeFqn = getStr(boundary, "type_fqn");
@@ -383,5 +382,19 @@ public class TopicDiscovery {
 
     private static String getStr(JsonObject obj, String key) {
         return obj.has(key) ? obj.get(key).getAsString() : "";
+    }
+
+    /** True when the boundary carries the given routing label. tacplus emits
+     *  these under the repeated "label" key (formerly the scalar "tag"). */
+    private static boolean hasLabel(JsonObject boundary, String label) {
+        if (!boundary.has("label") || !boundary.get("label").isJsonArray()) {
+            return false;
+        }
+        for (JsonElement elem : boundary.getAsJsonArray("label")) {
+            if (label.equals(elem.getAsString())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

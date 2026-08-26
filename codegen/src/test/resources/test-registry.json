@@ -6,21 +6,21 @@
       "state_root": "AegisState",
       "boundary": "event_stream",
       "type_fqn": "aegis.TopologyEvent",
-      "tag": "eventbus",
+      "label": ["eventbus"],
       "graph_type": "topic"
     },
     {
       "state_root": "AegisState",
       "boundary": "topology_graph",
       "type_fqn": "aegis.TopologyGraph",
-      "tag": "eventbus",
+      "label": ["eventbus"],
       "graph_type": "singleton"
     },
     {
       "state_root": "AegisState",
       "boundary": "conversations",
       "type_fqn": "aegis.ConversationEvent",
-      "tag": "eventbus",
+      "label": ["eventbus"],
       "graph_type": "topic"
     }
   ],
@@ -33,7 +33,7 @@
           "state_root": "Cluster",
           "boundary": "members",
           "type_fqn": "kernel.ClusterMember",
-          "tag": "kernel",
+          "label": ["kernel"],
           "graph_type": "collection"
         }
       ],
