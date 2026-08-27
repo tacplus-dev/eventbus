@@ -24,6 +24,23 @@
       "graph_type": "topic"
     }
   ],
+  "types": [
+    {
+      "fqn": "aegis.TopologyEvent",
+      "package": "aegis",
+      "fields": [
+        {"name": "spiffe_id", "type": "TYPE_KIND_STRING"}
+      ]
+    },
+    {
+      "fqn": "aegis.ConversationEvent",
+      "package": "aegis",
+      "fields": [
+        {"name": "spiffe_id", "type": "TYPE_KIND_STRING"},
+        {"name": "actor_spiffe_id", "type": "TYPE_KIND_STRING"}
+      ]
+    }
+  ],
   "children": [
     {
       "name": "kernel",
@@ -41,3 +58,4 @@
     }
   ]
 }
+

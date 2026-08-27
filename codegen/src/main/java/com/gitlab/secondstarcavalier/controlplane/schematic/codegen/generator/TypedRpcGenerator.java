@@ -235,19 +235,26 @@ public class TypedRpcGenerator {
         } else {
             sb.append(indent).append("                            null,\n");
         }
-        // Trace dispatch is generic: every event carries the injected trace_id
-        // (field 200). The trace topic itself gets none (avoids trace-of-traces).
-        // The per-type validator is the LAST argument. Publishing used to
-        // accept anything, so a message violating its own declared proto
+        // The per-type validator; actorStamper (added for item 6 Piece A,
+        // see below) is now the LAST argument. Publishing used to accept
+        // anything, so a message violating its own declared proto
         // constraints reached the store and then made every read of that
         // collection fail on the way out (see PublishHandler.onNext).
         String validatorRef = topic.getHelpersClassImport(packageBase)
                 + "::validate" + StringUtils.extractSimpleTypeName(topic.getFieldType());
+        // actorStamper: only present for topic types that declare
+        // actor_spiffe_id (item 6 Piece A) — stamps the delegated-mint actor
+        // from the caller's `act` claim. Null for every other topic.
+        String actorStamperArg = topic.hasActorSpiffeIdField()
+                ? "(msg, actorSpiffeId) -> msg.toBuilder().setActorSpiffeId(actorSpiffeId).build()"
+                : "null";
         if (qualifiedType.endsWith("TraceEvent")) {
-            sb.append(indent).append("                            null, null, ").append(validatorRef).append(");\n");
+            sb.append(indent).append("                            null, null, ").append(validatorRef)
+              .append(", ").append(actorStamperArg).append(");\n");
         } else {
             sb.append(indent).append("                            ").append(qualifiedType)
-              .append("::getTraceId, onTraceId, ").append(validatorRef).append(");\n");
+              .append("::getTraceId, onTraceId, ").append(validatorRef)
+              .append(", ").append(actorStamperArg).append(");\n");
         }
         sb.append(indent).append("                }));\n");
     }

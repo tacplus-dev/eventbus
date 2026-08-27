@@ -30,7 +30,11 @@ import java.util.function.Function;
  * Caller identity claims are extracted from the bearer token and attached
  * as Kafka message headers. For C2S topics, the generated code passes an
  * {@link IdentityStamper} that stamps the caller's subject SPIFFE id (the sub claim, already a SPIFFE URI)
- * onto the proto message's spiffe_id field before serialization.
+ * onto the proto message's spiffe_id field before serialization. Topic types
+ * that also declare actor_spiffe_id additionally receive an {@link ActorStamper},
+ * which stamps that field from the caller's `act` claim (item 6 Piece A) —
+ * the delegated-mint actor, present only when a delegated-user token made the
+ * call. Absent (the ordinary case), actor_spiffe_id is left unset.
  *
  * One instance per stream. The type parameter is the proto message type
  * for the topic (e.g., SensorEvent).
@@ -40,7 +44,7 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     private static final Logger logger = LoggerFactory.getLogger(PublishHandler.class);
 
     /** JWT claims to propagate as Kafka headers. */
-    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id"};
+    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id", "act"};
 
     /**
      * Stamps identity onto a proto message. Generated per-type by the codegen
@@ -49,6 +53,20 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     @FunctionalInterface
     public interface IdentityStamper<T> {
         T stamp(T message, String spiffeId);
+    }
+
+    /**
+     * Stamps the delegated-mint actor onto a proto message. Generated per-type
+     * by the codegen plugin ONLY for C2S topic types that declare an
+     * actor_spiffe_id field (see TopicDiscovery.collectTypesWithActorSpiffeIdField).
+     * A sibling interface to {@link IdentityStamper}, not an overload of it, so
+     * existing per-type stamper wiring never changes signature. Only invoked
+     * when the caller's token in fact carries an `act` claim (item 6 Piece A) —
+     * the ordinary, non-delegated case leaves actor_spiffe_id unset.
+     */
+    @FunctionalInterface
+    public interface ActorStamper<T> {
+        T stamp(T message, String actorSpiffeId);
     }
 
     /**
@@ -66,6 +84,9 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     private final StreamObserver<Eventbus.PublishResponse> responseObserver;
     private final Map<String, String> callerHeaders;
     private final IdentityStamper<T> stamper;
+    /** Optionally stamps actor_spiffe_id from the caller's `act` claim. Null
+     *  for topic types that declare no actor_spiffe_id field. */
+    private final ActorStamper<T> actorStamper;
     /** Rejects malformed events at ingress. Null = no generated validator. */
     private final IngressValidator<T> validator;
     /** Extracts trace_id from an incoming message (field 200). Null = no tracing. */
@@ -112,16 +133,32 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                           Function<T, String> traceIdExtractor,
                           Consumer<String> traceDispatcher,
                           IngressValidator<T> validator) {
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper,
+                traceIdExtractor, traceDispatcher, validator, null);
+    }
+
+    /** Backward-compatible constructor without an actor stamper: no C2S topic
+     *  type declared actor_spiffe_id, so caller.act is never applied. */
+    public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
+                          TopicManager topicManager,
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper,
+                          Function<T, String> traceIdExtractor,
+                          Consumer<String> traceDispatcher,
+                          IngressValidator<T> validator,
+                          ActorStamper<T> actorStamper) {
         this.kafkaTopic = kafkaTopic;
         this.validator = validator;
         this.publisher = publisher;
         this.responseObserver = responseObserver;
         this.callerHeaders = extractCallerClaims();
         this.stamper = stamper;
+        this.actorStamper = actorStamper;
         this.traceIdExtractor = traceIdExtractor;
         this.traceDispatcher = traceDispatcher;
         topicManager.ensureTopicExists(kafkaTopic);
     }
+
 
     /**
      * Extracts identity claims from the bearer token payload stored in gRPC context
@@ -207,6 +244,12 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
             String spiffeId = callerHeaders.getOrDefault("caller.sub", "");
             if (!spiffeId.isEmpty()) {
                 stamped = stamper.stamp(message, spiffeId);
+            }
+        }
+        if (actorStamper != null) {
+            String actorSpiffeId = callerHeaders.getOrDefault("caller.act", "");
+            if (!actorSpiffeId.isEmpty()) {
+                stamped = actorStamper.stamp(stamped, actorSpiffeId);
             }
         }
         byte[] bytes = stamped.toByteArray();

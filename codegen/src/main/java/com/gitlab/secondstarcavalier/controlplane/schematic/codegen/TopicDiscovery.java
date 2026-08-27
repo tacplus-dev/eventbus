@@ -42,6 +42,7 @@ public class TopicDiscovery {
         private final String packagePath;   // e.g. "services/aegis"
         private final String typePathPrefix; // e.g. "services" or "common"
         private final boolean hasSpiffeIdField; // true if the type has a string spiffe_id field (C2S topics)
+        private final boolean hasActorSpiffeIdField; // true if the type has a string actor_spiffe_id field (item 6 Piece A)
         private String javaOuterClass;      // resolved from the registry; see setJavaOuterClass
 
         public TopicField(String stateName, String statePackage, String fieldName,
@@ -66,6 +67,14 @@ public class TopicDiscovery {
                           String fieldType, String topicName, String packagePath,
                           String typePathPrefix, boolean hasSpiffeIdField,
                           String declaringPackage) {
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath,
+                    typePathPrefix, hasSpiffeIdField, declaringPackage, false);
+        }
+
+        public TopicField(String stateName, String statePackage, String fieldName,
+                          String fieldType, String topicName, String packagePath,
+                          String typePathPrefix, boolean hasSpiffeIdField,
+                          String declaringPackage, boolean hasActorSpiffeIdField) {
             this.declaringPackage = declaringPackage == null || declaringPackage.isEmpty()
                     ? statePackage : declaringPackage;
             this.stateName = stateName;
@@ -76,6 +85,7 @@ public class TopicDiscovery {
             this.packagePath = packagePath;
             this.typePathPrefix = typePathPrefix;
             this.hasSpiffeIdField = hasSpiffeIdField;
+            this.hasActorSpiffeIdField = hasActorSpiffeIdField;
         }
 
         public String getStateName() { return stateName; }
@@ -91,6 +101,8 @@ public class TopicDiscovery {
         public String getTopicName() { return topicName; }
         public String getPackagePath() { return packagePath; }
         public boolean hasSpiffeIdField() { return hasSpiffeIdField; }
+        public boolean hasActorSpiffeIdField() { return hasActorSpiffeIdField; }
+
 
         public String getFieldPascal() {
             return StringUtils.toPascalCase(fieldName);
@@ -173,18 +185,25 @@ public class TopicDiscovery {
         Set<String> typesWithSpiffeId = new HashSet<>();
         collectTypesWithSpiffeIdField(root, typesWithSpiffeId);
 
+        // Build a set of type FQNs that have a "string actor_spiffe_id" field
+        // (item 6 Piece A) — the OPTIONAL delegated-mint actor provenance
+        // field, distinct from and independent of spiffe_id above.
+        Set<String> typesWithActorSpiffeId = new HashSet<>();
+        collectTypesWithActorSpiffeIdField(root, typesWithActorSpiffeId);
+
         // Every top-level name protoc sees per proto package. A package whose
         // pascal-cased name is taken by one of them gets the "OuterClass" suffix.
         Map<String, Set<String>> topLevelNames = new HashMap<>();
         collectTopLevelNames(root, topLevelNames);
 
         List<TopicField> topics = new ArrayList<>();
-        walkNode(root, topics, packagePathMap, typesWithSpiffeId);
+        walkNode(root, topics, packagePathMap, typesWithSpiffeId, typesWithActorSpiffeId);
         for (TopicField topic : topics) {
             topic.setJavaOuterClass(resolveOuterClass(topic.typeProtoPackage(), topLevelNames));
         }
         return topics;
     }
+
 
     /**
      * Mirrors protoc's outer class naming: the pascal-cased proto package, plus
@@ -289,6 +308,37 @@ public class TopicDiscovery {
     }
 
     /**
+     * Walks the registry tree collecting FQNs of types that have a "string
+     * actor_spiffe_id" field (item 6 Piece A) — mirrors
+     * {@link #collectTypesWithSpiffeIdField} exactly, by literal field name,
+     * for the OPTIONAL delegated-mint actor provenance field.
+     */
+    private void collectTypesWithActorSpiffeIdField(JsonObject node, Set<String> result) {
+        if (node.has("types")) {
+            for (JsonElement elem : node.getAsJsonArray("types")) {
+                JsonObject type = elem.getAsJsonObject();
+                String fqn = getStr(type, "fqn");
+                if (!fqn.isEmpty() && type.has("fields")) {
+                    for (JsonElement fieldElem : type.getAsJsonArray("fields")) {
+                        JsonObject field = fieldElem.getAsJsonObject();
+                        if ("actor_spiffe_id".equals(getStr(field, "name"))
+                                && "TYPE_KIND_STRING".equals(getStr(field, "type"))) {
+                            result.add(fqn);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (node.has("children")) {
+            for (JsonElement child : node.getAsJsonArray("children")) {
+                collectTypesWithActorSpiffeIdField(child.getAsJsonObject(), result);
+            }
+        }
+    }
+
+
+    /**
      * The proto package declared by this registry node, e.g. the
      * vservices/agent-sensor node declares package "agentsensor". Falls back to
      * the supplied default when the node carries no types.
@@ -306,7 +356,8 @@ public class TopicDiscovery {
     }
 
     private void walkNode(JsonObject node, List<TopicField> topics,
-                          Map<String, String> packagePathMap, Set<String> typesWithSpiffeId) {
+                          Map<String, String> packagePathMap, Set<String> typesWithSpiffeId,
+                          Set<String> typesWithActorSpiffeId) {
         String packagePath = node.has("full_path")
                 ? node.get("full_path").getAsString() : "";
 
@@ -347,7 +398,8 @@ public class TopicDiscovery {
                     topics.add(new TopicField(
                             stateRoot, protoPackage, fieldName,
                             typeFqn, topicName, packagePath, typePrefix,
-                            typesWithSpiffeId.contains(typeFqn), declaringPackage));
+                            typesWithSpiffeId.contains(typeFqn), declaringPackage,
+                            typesWithActorSpiffeId.contains(typeFqn)));
                 }
             }
         }
@@ -375,10 +427,12 @@ public class TopicDiscovery {
         if (node.has("children")) {
             JsonArray children = node.getAsJsonArray("children");
             for (JsonElement child : children) {
-                walkNode(child.getAsJsonObject(), topics, packagePathMap, typesWithSpiffeId);
+                walkNode(child.getAsJsonObject(), topics, packagePathMap, typesWithSpiffeId,
+                        typesWithActorSpiffeId);
             }
         }
     }
+
 
     private static String getStr(JsonObject obj, String key) {
         return obj.has(key) ? obj.get(key).getAsString() : "";

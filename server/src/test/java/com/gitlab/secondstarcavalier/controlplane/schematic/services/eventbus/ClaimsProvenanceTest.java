@@ -109,6 +109,27 @@ class ClaimsProvenanceTest {
     }
 
     /**
+     * A valid, correctly-signed, eventbus-audience S2S token carrying an `act`
+     * claim (item 6 Piece A's delegated-mint actor). {@code setCustomField} is
+     * used rather than a typed {@code setAct} because this checkout's generated
+     * {@code TokenWrapper} predates the new claim's template accessor — the
+     * payload map entry it writes is exactly what a regenerated {@code setAct}
+     * would also write, so this is a faithful stand-in for extraction purposes.
+     */
+    private static String serviceTokenWithActor(ImmutableKey key, String service, String actorSpiffeId)
+            throws Exception {
+        TokenWrapper tok = TokenWrapper.create()
+                .setIssuer("test-issuer")
+                .setAudience(AUDIENCE)
+                .setExpiration(System.currentTimeMillis() / 1000 + 3600)
+                .setSubType("service")
+                .setSubject(service)
+                .setCustomField("act", actorSpiffeId);
+        tok.sign(key);
+        return "Bearer " + tok.getBase64();
+    }
+
+    /**
      * A FORGED bearer: three base64url segments, a hand-written payload naming
      * someone else, and a signature that is not a signature. Nothing signed it.
      */
@@ -277,4 +298,48 @@ class ClaimsProvenanceTest {
             shutdown(server);
         }
     }
+
+    /**
+     * Item 6 Piece A: a verified token's `act` claim (the delegated-mint
+     * actor) must be visible in the same verified-payload seam PublishHandler
+     * reads — i.e. CLAIM_KEYS propagation is not special-cased away for `act`.
+     */
+    @Test
+    void verifiedTokenWithActor_stampsActClaim() throws Exception {
+        ImmutableKey key = newTestKey();
+        Authorizer authorizer = authorizerWithKey(key);
+        AtomicReference<String> seen = new AtomicReference<>();
+        Server server = startServer(authorizer, true, seen);
+        try {
+            call(server, serviceTokenWithActor(key, "agentsensor", "spiffe://schematic/user/alice"),
+                    PUBLISH_TRACE, TRACE_EVENT);
+            assertNotNull(seen.get(), "handler code was never reached");
+            assertTrue(seen.get().contains("\"act\":\"spiffe://schematic/user/alice\""),
+                    "a verified caller's act claim must be visible to PublishHandler; got " + seen.get());
+        } finally {
+            shutdown(server);
+        }
+    }
+
+    /**
+     * The ordinary, non-delegated case: no `act` claim on the token means
+     * PublishHandler's callerHeaders never carries `caller.act`, and nothing
+     * downstream stamps an actor_spiffe_id.
+     */
+    @Test
+    void verifiedTokenWithoutActor_noActClaim() throws Exception {
+        ImmutableKey key = newTestKey();
+        Authorizer authorizer = authorizerWithKey(key);
+        AtomicReference<String> seen = new AtomicReference<>();
+        Server server = startServer(authorizer, true, seen);
+        try {
+            call(server, serviceToken(key, "agentsensor"), PUBLISH_TRACE, TRACE_EVENT);
+            assertNotNull(seen.get(), "handler code was never reached");
+            assertTrue(!seen.get().contains("\"act\""),
+                    "an ordinary token must carry no act claim; got " + seen.get());
+        } finally {
+            shutdown(server);
+        }
+    }
 }
+

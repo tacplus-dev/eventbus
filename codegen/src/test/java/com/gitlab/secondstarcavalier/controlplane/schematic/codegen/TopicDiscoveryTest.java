@@ -129,4 +129,50 @@ class TopicDiscoveryTest {
                 eventStream.getJavaOuterClassImport("com.example.services"));
         assertEquals("Aegis.TopologyEvent", eventStream.getJavaQualifiedType());
     }
+
+    /**
+     * Item 6 Piece A: a topic type declaring only spiffe_id (not
+     * actor_spiffe_id) must report hasSpiffeIdField() true and
+     * hasActorSpiffeIdField() false — the two are independent flags.
+     */
+    @Test
+    void discoverTopics_hasSpiffeIdFieldWithoutActor() throws IOException {
+        Path registryPath = Path.of(getClass().getClassLoader()
+                .getResource("test-registry.json").getPath());
+
+        TopicDiscovery discovery = new TopicDiscovery(registryPath);
+        List<TopicDiscovery.TopicField> topics = discovery.discoverTopics();
+
+        TopicDiscovery.TopicField eventStream = topics.stream()
+                .filter(t -> t.getFieldName().equals("event_stream"))
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(eventStream.hasSpiffeIdField(), "aegis.TopologyEvent declares spiffe_id");
+        assertFalse(eventStream.hasActorSpiffeIdField(),
+                "aegis.TopologyEvent declares no actor_spiffe_id");
+    }
+
+    /**
+     * A topic type declaring BOTH spiffe_id and actor_spiffe_id (the item 6
+     * Piece A opt-in shape) must report both flags true.
+     */
+    @Test
+    void discoverTopics_hasActorSpiffeIdFieldWhenDeclared() throws IOException {
+        Path registryPath = Path.of(getClass().getClassLoader()
+                .getResource("test-registry.json").getPath());
+
+        TopicDiscovery discovery = new TopicDiscovery(registryPath);
+        List<TopicDiscovery.TopicField> topics = discovery.discoverTopics();
+
+        TopicDiscovery.TopicField conversations = topics.stream()
+                .filter(t -> t.getFieldName().equals("conversations"))
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(conversations.hasSpiffeIdField(), "aegis.ConversationEvent declares spiffe_id");
+        assertTrue(conversations.hasActorSpiffeIdField(),
+                "aegis.ConversationEvent declares actor_spiffe_id");
+    }
 }
+
