@@ -253,10 +253,12 @@ class TypedRpcGeneratorTest {
         String content = Files.readString(tempDir.resolve(
                 "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
         assertTrue(content.contains(
-                        "authorizer.setMethodAuth(\"PublishToEventStream\", List.of(\"aegis\"));"),
-                "publish policy should come straight from the registry: " + content);
+                        "authorizer.setMethodAuth(\"aegis.AegisStateStateService/PublishToEventStream\", "
+                        + "List.of(\"aegis\"));"),
+                "publish policy should come straight from the registry, keyed by full path: " + content);
         assertTrue(content.contains(
-                        "authorizer.setMethodAuth(\"SubscribeToEventStream\", List.of(\"aegis\", \"sentinel\"));"),
+                        "authorizer.setMethodAuth(\"aegis.AegisStateStateService/SubscribeToEventStream\", "
+                        + "List.of(\"aegis\", \"sentinel\"));"),
                 "subscribe policy should carry every declared caller: " + content);
     }
 
@@ -277,9 +279,12 @@ class TypedRpcGeneratorTest {
     }
 
     @Test
-    void generate_refusesCollidingRpcNamesWithDifferentPolicies() {
-        // The Authorizer keys auth_services by bare rpc name, so two topics
-        // spelling the same rpc would have one policy overwrite the other.
+    void generate_keepsCollidingRpcNamesApartByFullPath() throws IOException {
+        // Topics genuinely share rpc names — every topic field named "stream"
+        // spells PublishToStream — and they carry DIFFERENT auth_services. Keyed
+        // by bare rpc name one policy would silently overwrite the other, handing
+        // one topic's callers access to the other's. Keyed by full grpc path they
+        // cannot collide.
         TopicDiscovery.TopicField a = new TopicDiscovery.TopicField(
                 "AegisState", "aegis", "stream", "aegis.TopologyEvent",
                 "services.aegis.aegis.AegisState.Stream", "services/aegis");
@@ -297,8 +302,17 @@ class TypedRpcGeneratorTest {
         b.setMethodAuthServices(authB);
 
         TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
-        IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> gen.generate(List.of(a, b)));
-        assertTrue(e.getMessage().contains("PublishToStream"), e.getMessage());
+        gen.generate(List.of(a, b));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+        assertTrue(content.contains(
+                        "authorizer.setMethodAuth(\"aegis.AegisStateStateService/PublishToStream\", "
+                        + "List.of(\"aegis\"));"),
+                "aegis keeps its own policy: " + content);
+        assertTrue(content.contains(
+                        "authorizer.setMethodAuth(\"other.OtherStateStateService/PublishToStream\", "
+                        + "List.of(\"other\"));"),
+                "other keeps its own policy: " + content);
     }
 }

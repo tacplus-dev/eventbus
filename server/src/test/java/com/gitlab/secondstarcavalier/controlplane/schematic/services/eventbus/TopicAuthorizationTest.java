@@ -8,6 +8,8 @@ import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.mo
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.token.TokenWrapper;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.services.eventbus.Eventbus;
+import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.vservices.accountingrecord.Accountingrecord;
+import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.vservices.agentsensor.Agentsensor;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.jwk.JwkOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.key.KeyOuterClass;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.trace.Trace;
@@ -211,6 +213,16 @@ class TopicAuthorizationTest {
     private static final MethodDescriptor<Message, Object> SUBSCRIBE_AGENT =
             erase(TypedEventBusBindings.SUBSCRIBE_TO_AGENT_EVENT_BUS_EVENT_STREAM);
 
+    // Two topics that spell the SAME rpc name, with different auth_services:
+    // both fields are named "stream", so both rpcs are PublishToStream.
+    private static final MethodDescriptor<Message, Object> PUBLISH_ACCOUNTING_STREAM =
+            erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM);
+    private static final MethodDescriptor<Message, Object> PUBLISH_AGENT_SESSION_STREAM =
+            erase(TypedEventBusBindings.PUBLISH_TO_AGENT_SESSION_STATE_BUS_STREAM);
+
+    private static final Message ACCOUNTING_RECORD = Accountingrecord.AccountingRecord.getDefaultInstance();
+    private static final Message AGENT_SESSION = Agentsensor.AgentSessionState.getDefaultInstance();
+
     private static final Message TRACE_EVENT = Trace.TraceEvent.getDefaultInstance();
     private static final Message SUBSCRIBE_REQUEST = Eventbus.SubscribeRequest.getDefaultInstance();
 
@@ -311,6 +323,37 @@ class TopicAuthorizationTest {
             Status s = call(server, serviceToken(key, "agentsensor"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
             assertEquals(Status.Code.UNAVAILABLE, s.getCode(),
                     "agentsensor must reach the subscribe handler; got " + s);
+        } finally {
+            shutdown(server);
+        }
+    }
+
+    // ---- SAME RPC NAME, DIFFERENT TOPIC: policies must not bleed across ----
+
+    /**
+     * accountingrecord.AccountingRecordBusStateService/PublishToStream and
+     * agentsensor.AgentSessionStateBusStateService/PublishToStream share a bare
+     * rpc name and declare different auth_services. Both halves in one test: the
+     * accountingrecord caller reaches its own topic's handler and is refused on
+     * agentsensor's. Keyed by bare rpc name — as the chassis Authorizer did
+     * before this change — one policy overwrote the other and one of these two
+     * assertions had to fail.
+     */
+    @Test
+    void sameRpcNameOnTwoTopics_policiesStayApart() throws Exception {
+        ImmutableKey key = newTestKey();
+        Authorizer authorizer = authorizerWithKey(key);
+        Server server = startServer(authorizer, true);
+        try {
+            Status own = call(server, serviceToken(key, "accountingrecord"),
+                    PUBLISH_ACCOUNTING_STREAM, ACCOUNTING_RECORD);
+            assertEquals(Status.Code.UNAVAILABLE, own.getCode(),
+                    "accountingrecord must reach its own topic's handler; got " + own);
+
+            Status other = call(server, serviceToken(key, "accountingrecord"),
+                    PUBLISH_AGENT_SESSION_STREAM, AGENT_SESSION);
+            assertEquals(Status.Code.PERMISSION_DENIED, other.getCode(),
+                    "accountingrecord must not publish to the agentsensor session topic; got " + other);
         } finally {
             shutdown(server);
         }

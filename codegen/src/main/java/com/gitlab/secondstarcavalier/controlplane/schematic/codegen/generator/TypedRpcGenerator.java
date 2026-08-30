@@ -250,18 +250,25 @@ public class TypedRpcGenerator {
     }
 
     /**
-     * Flattens every topic's per-rpc auth_services into the rpc-name-keyed form
-     * {@code Authorizer.setMethodAuth} takes.
+     * Flattens every topic's per-rpc auth_services into the form
+     * {@code Authorizer.setMethodAuth} takes, keyed by FULL grpc method name
+     * ("pkg.Service/Rpc").
      *
-     * <p>Two hard failures rather than a silent weakening: a topic whose rpcs
-     * declare no auth_services would be served with no policy at all, and two
-     * topics whose rpcs share a name would have one policy overwrite the other
-     * (the Authorizer keys on the bare rpc name, not the full method).
+     * <p>Full path, not bare rpc name, because eventbus serves every topic's
+     * service in one process off one Authorizer, and topics genuinely share rpc
+     * names: a topic field named {@code stream} yields PublishToStream on
+     * scotty.ScottyActivityBusStateService, on
+     * accountingrecord.AccountingRecordBusStateService and on
+     * agentsensor.AgentSessionStateBusStateService, each with a different
+     * auth_services. Keyed by bare name one policy would silently overwrite the
+     * other two; keyed by full path they cannot collide.
+     *
+     * <p>Still one hard failure: a topic whose rpcs declare no auth_services
+     * would be served with no policy at all.
      */
     private Map<String, List<String>> collectMethodAuth(List<TopicField> topics) {
-        Map<String, List<String>> byRpc = new LinkedHashMap<>();
+        Map<String, List<String>> byMethod = new LinkedHashMap<>();
         List<String> unpoliced = new ArrayList<>();
-        List<String> collisions = new ArrayList<>();
         for (TopicField topic : topics) {
             Map<String, List<String>> auth = topic.getMethodAuthServices();
             if (auth.isEmpty()) {
@@ -269,11 +276,13 @@ public class TypedRpcGenerator {
                 continue;
             }
             for (Map.Entry<String, List<String>> e : auth.entrySet()) {
-                List<String> existing = byRpc.get(e.getKey());
-                if (existing != null && !existing.equals(e.getValue())) {
-                    collisions.add(e.getKey() + ": " + existing + " vs " + e.getValue());
-                }
-                byRpc.put(e.getKey(), e.getValue());
+                // No leading slash: the key must equal what
+                // MethodDescriptor.getFullMethodName() returns for the binding
+                // emitted above ("pkg.Service/Rpc"), which is what the Authorizer
+                // looks up. The registry spells the same path with a leading
+                // slash; that form would silently never match and deny every
+                // caller. TopicAuthorizationTest's positive cases are the guard.
+                byMethod.put(topic.getPerTopicServiceName() + "/" + e.getKey(), e.getValue());
             }
         }
         if (!unpoliced.isEmpty()) {
@@ -281,13 +290,7 @@ public class TypedRpcGenerator {
                     "eventbus topics with no auth_services in the registry: " + unpoliced
                     + " — declare (spec.service_s2s) auth_services on the topic's state service");
         }
-        if (!collisions.isEmpty()) {
-            throw new IllegalStateException(
-                    "eventbus topic rpc names collide with differing auth_services: " + collisions
-                    + " — the Authorizer keys auth_services by bare rpc name, so one would silently"
-                    + " overwrite the other; rename the topic boundary");
-        }
-        return byRpc;
+        return byMethod;
     }
 
     /**
