@@ -3,6 +3,7 @@ package com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.g
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.io.IOException;
 import java.util.Map;
@@ -40,6 +41,21 @@ class SubscribeHandlerTest {
 		assertEquals(42, decoded.meta().offset());
 		assertEquals(1_700_000_000L, decoded.meta().timestamp().getSeconds());
 		assertEquals(123_000_000, decoded.meta().timestamp().getNanos());
+	}
+
+	@Test
+	void boundConsumerGroupNamespacesTheRequestedGroupUnderTheCaller() {
+		String victim = "spiffe://test/system/services/stratum";
+		String attacker = "spiffe://test/system/services/tasks";
+
+		assertEquals(victim + "|stratum-rebuild",
+				SubscribeHandler.boundConsumerGroup(victim, "stratum-rebuild"));
+		// Same string asked for, two different Kafka groups.
+		assertNotEquals(SubscribeHandler.boundConsumerGroup(victim, "stratum-rebuild"),
+				SubscribeHandler.boundConsumerGroup(attacker, "stratum-rebuild"));
+		// No group asked for stays no group: KafkaSubscriber assigns a random one.
+		assertEquals("", SubscribeHandler.boundConsumerGroup(victim, ""));
+		assertEquals("", SubscribeHandler.boundConsumerGroup(victim, null));
 	}
 
 	private static DecodedEnvelope decodeEnvelope(byte[] data) throws IOException {

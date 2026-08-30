@@ -4,6 +4,7 @@ package com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.g
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.kafka.KafkaSubscriber;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.kafka.KafkaSubscriber.*;
 
+import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Auth;
 import com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.services.eventbus.Eventbus;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.DescriptorProtos;
@@ -30,6 +31,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * The first SubscribeRequest creates a KafkaSubscriber.Session on a
  * virtual thread. Subsequent requests call session.resubscribe().
+ *
+ * The client-supplied consumer_group is namespaced under the caller's own
+ * verified identity before it reaches Kafka -- see
+ * {@link #boundConsumerGroup}.
  */
 public class SubscribeHandler<T extends MessageLite> implements StreamObserver<Eventbus.SubscribeRequest> {
 
@@ -112,6 +117,8 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 	private final ProtoParser<T> parser;
 	private volatile Session session;
 	private final AtomicBoolean firstMessage = new AtomicBoolean(true);
+	/** Set once the stream has been failed, so a later onNext does not fail it twice. */
+	private final AtomicBoolean streamFailed = new AtomicBoolean(false);
 
 	public SubscribeHandler(KafkaSubscriber subscriber, String kafkaTopic,
 			StreamObserver<DynamicMessage> responseObserver, ProtoParser<T> parser) {
@@ -127,7 +134,32 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 
 	@Override
 	public void onNext(Eventbus.SubscribeRequest request) {
-		SeekParams params = toSeekParams(request);
+		if (streamFailed.get()) {
+			return;
+		}
+
+		// The group id the caller asked for is not the group id Kafka gets: it
+		// is namespaced under the caller's own verified identity first. Without
+		// that, any authenticated caller could name another service's group
+		// (e.g. stratum's ingestion group) and silently steal or duplicate its
+		// share of the partitions.
+		String callerSub = Auth.callerSubFromContext();
+		if (!request.getConsumerGroup().isEmpty() && callerSub.isEmpty()) {
+			// Nothing verified a token on this RPC, so there is no identity to
+			// bind the group to. An anonymous caller may still subscribe with no
+			// group at all -- KafkaSubscriber then gives it a fresh random one,
+			// which is nobody else's.
+			if (streamFailed.compareAndSet(false, true)) {
+				synchronized (responseObserver) {
+					responseObserver.onError(Status.UNAUTHENTICATED
+							.withDescription("consumer_group requires a verified caller identity")
+							.asRuntimeException());
+				}
+			}
+			return;
+		}
+
+		SeekParams params = toSeekParams(request, callerSub);
 
 		if (firstMessage.compareAndSet(true, false)) {
 			Session s = subscriber.createSession(kafkaTopic, params);
@@ -241,7 +273,25 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		logger.debug("Client half-closed subscribe stream for topic {}", kafkaTopic);
 	}
 
-	private static SeekParams toSeekParams(Eventbus.SubscribeRequest request) {
+	/**
+	 * Namespaces a client-supplied consumer group under the caller's own
+	 * identity, so two callers naming the same group land in two different
+	 * Kafka groups and neither can join the other's.
+	 *
+	 * An empty request means "no group" and stays empty: KafkaSubscriber then
+	 * assigns a fresh random group id, which no other caller can name.
+	 *
+	 * The separator is '|', which cannot appear in the SPIFFE URI that is the
+	 * caller's sub, so no two subjects can produce the same bound group.
+	 */
+	static String boundConsumerGroup(String callerSub, String requested) {
+		if (requested == null || requested.isEmpty()) {
+			return "";
+		}
+		return callerSub + "|" + requested;
+	}
+
+	private static SeekParams toSeekParams(Eventbus.SubscribeRequest request, String callerSub) {
 		SeekMode mode = SeekMode.LATEST;
 		long value = 0;
 
@@ -284,7 +334,7 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		return new SeekParams(
 				mode, value,
 				request.getSpeedMultiplier(),
-				request.getConsumerGroup(),
+				boundConsumerGroup(callerSub, request.getConsumerGroup()),
 				request.getPause(),
 				bp,
 				request.getSampleInterval(),
