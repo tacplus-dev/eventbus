@@ -4,6 +4,7 @@ package com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.k
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -67,6 +68,42 @@ public class KafkaSubscriber {
             longFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_POLL_MS", 5000L);
 
     /**
+     * Hard ceiling (ms) on how long a session may go without calling poll()
+     * before the group coordinator evicts it, and the value handed to
+     * {@code max.poll.interval.ms}. The two must agree: every keep-alive in
+     * the poll loop below is sized against this constant.
+     *
+     * Heartbeats come from the client's background thread, so a session that
+     * stops polling still looks alive to the coordinator until this expires —
+     * which is exactly the failure where the group reports Stable, the pod is
+     * 1/1 Ready, and nothing is consumed.
+     * Override via env var {@code EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS}.
+     */
+    static final long MAX_POLL_INTERVAL_MS =
+            longFromEnv("EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS", 60000L);
+
+    /**
+     * Budget (ms) for work done between two poll() calls — pacing sleeps,
+     * record dispatch to a slow gRPC client, everything on the poll thread.
+     * Half of {@link #MAX_POLL_INTERVAL_MS}, so a session that overruns the
+     * budget still has a full interval of slack to get back into poll().
+     * Also the scan period of the poll-stall watchdog.
+     */
+    static final long PROCESSING_BUDGET_MS = MAX_POLL_INTERVAL_MS / 2;
+
+    /**
+     * {@code max.poll.records}. Set explicitly because the DROP_OLD
+     * "client has fallen behind" check in the poll loop compares a batch size
+     * against it; leaving it on the client default means that check silently
+     * stops matching if the default ever moves.
+     */
+    static final int MAX_POLL_RECORDS =
+            intFromEnv("EVENTBUS_SUBSCRIBER_MAX_POLL_RECORDS", 500);
+
+    /** Poll timeout (ms) used while a subscription is client-paused. */
+    private static final long PAUSED_POLL_MS = 100;
+
+    /**
      * Arms the wall-clock deadline on each session's partition-assignment wait.
      * {@code KafkaConsumer.wakeup()} is the only thread-safe consumer method,
      * so this is a safe way to break a poll() that is blocked inside a
@@ -80,6 +117,31 @@ public class KafkaSubscriber {
                 return t;
             });
 
+    /**
+     * Every session currently inside {@link Session#run}. Scanned by the
+     * poll-stall watchdog below; a session adds itself when its loop starts
+     * and removes itself when the loop exits.
+     */
+    private static final Set<Session> LIVE_SESSIONS = ConcurrentHashMap.newKeySet();
+
+    static {
+        // Liveness signal. A session that stops calling poll() takes its whole
+        // consumer group down with it (the coordinator cannot complete a
+        // rebalance until every member rejoins) and does it silently — no
+        // exception, no unhealthy pod, just lag that stops moving. The loop
+        // below is written so this never happens; this scan is what tells us
+        // when it does anyway, instead of leaving it to be found by hand.
+        ASSIGNMENT_WATCHDOG.scheduleAtFixedRate(KafkaSubscriber::scanForPollStalls,
+                PROCESSING_BUDGET_MS, PROCESSING_BUDGET_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private static void scanForPollStalls() {
+        long now = System.nanoTime();
+        for (Session session : LIVE_SESSIONS) {
+            session.checkPollStall(now);
+        }
+    }
+
     private final String bootstrapServers;
 
     // Lifecycle counters — observable without a metrics framework. A future
@@ -88,12 +150,16 @@ public class KafkaSubscriber {
     private final AtomicLong sessionsAssigned = new AtomicLong();
     private final AtomicLong sessionsAssignTimedOut = new AtomicLong();
     private final AtomicLong sessionsFailed = new AtomicLong();
+    private final AtomicLong pollStallsDetected = new AtomicLong();
+    private final AtomicLong pollsCompleted = new AtomicLong();
     private final AtomicInteger sessionsActive = new AtomicInteger();
 
     public long getSessionsStarted()        { return sessionsStarted.get(); }
     public long getSessionsAssigned()       { return sessionsAssigned.get(); }
     public long getSessionsAssignTimedOut() { return sessionsAssignTimedOut.get(); }
     public long getSessionsFailed()         { return sessionsFailed.get(); }
+    public long getPollStallsDetected()     { return pollStallsDetected.get(); }
+    public long getPollsCompleted()         { return pollsCompleted.get(); }
     public int  getSessionsActive()         { return sessionsActive.get(); }
 
     /**
@@ -204,6 +270,10 @@ public class KafkaSubscriber {
         private volatile boolean closed;
         /** Set by the assignment watchdog so a deadline wakeup is not mistaken for a resubscribe. */
         private volatile boolean assignmentDeadlineExpired;
+        /** When poll() last returned. Read by the poll-stall watchdog. */
+        private volatile long lastPollNanos = System.nanoTime();
+        /** Latches so one stall is logged once, not once per watchdog scan. */
+        private volatile boolean pollStallReported;
 
         private Session(String topic, KafkaConsumer<String, byte[]> consumer) {
             this.topic = topic;
@@ -225,6 +295,83 @@ public class KafkaSubscriber {
             consumer.wakeup();
         }
 
+        /** Records that poll() returned, clearing any outstanding stall report. */
+        private void markPolled() {
+            lastPollNanos = System.nanoTime();
+            pollsCompleted.incrementAndGet();
+            if (pollStallReported) {
+                pollStallReported = false;
+                logger.warn("Consumer poll loop recovered on topic {}", topic);
+            }
+        }
+
+        /** Called by the shared watchdog; logs and counts a stalled poll loop once. */
+        private void checkPollStall(long nowNanos) {
+            if (pollStallReported || closed) return;
+            long stalledMs = (nowNanos - lastPollNanos) / 1_000_000;
+            if (stalledMs <= MAX_POLL_INTERVAL_MS) return;
+            pollStallReported = true;
+            pollStallsDetected.incrementAndGet();
+            logger.error("Consumer poll loop STALLED on topic {}: no successful poll for {}ms "
+                            + "(max.poll.interval.ms={}). This member will be evicted and every "
+                            + "consumer in its group rebalanced; consumption stops until it polls again.",
+                    topic, stalledMs, MAX_POLL_INTERVAL_MS);
+        }
+
+        /**
+         * Tops up the client's poll timer without consuming anything, so a
+         * long stretch of work inside one record batch cannot get this member
+         * evicted (and with it stall every other member of the group).
+         *
+         * All assigned partitions are paused for the call and {@code
+         * Duration.ZERO} is used deliberately: a zero timer cannot complete a
+         * rebalance mid-batch and cannot return records — a partition handed
+         * to us by a rebalance during this call has no completed fetch yet —
+         * so there is nothing to buffer and nothing to drop. What it does do
+         * is reset {@code lastPollTime} in the heartbeat thread, which is the
+         * only thing standing between a slow handler and a group-wide eviction.
+         */
+        private void keepAlive() {
+            Set<TopicPartition> assigned = consumer.assignment();
+            consumer.pause(assigned);
+            try {
+                consumer.poll(Duration.ZERO);
+                markPolled();
+            } catch (org.apache.kafka.common.errors.WakeupException e) {
+                // A resubscribe or close is pending. The caller re-checks both
+                // right after this returns, so the wakeup is not lost.
+            } finally {
+                consumer.resume(assigned);
+            }
+        }
+
+        /**
+         * Sleeps a pacing delay in slices no longer than
+         * {@link #PROCESSING_BUDGET_MS}, keeping group membership alive between
+         * slices. Replaying at speed 1.0 across events minutes apart asks for a
+         * sleep of minutes; doing that in one Thread.sleep() blows
+         * max.poll.interval.ms and rebalances the whole group.
+         *
+         * Returns false if the thread was interrupted.
+         */
+        private boolean paceSleep(long totalMs) {
+            long remainingMs = totalMs;
+            while (remainingMs > 0 && !closed && pending.get() == null) {
+                long sliceMs = Math.min(remainingMs, PROCESSING_BUDGET_MS);
+                try {
+                    Thread.sleep(sliceMs);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+                remainingMs -= sliceMs;
+                if (remainingMs > 0) {
+                    keepAlive();
+                }
+            }
+            return true;
+        }
+
         /**
          * Runs the poll loop. Blocks until closed or interrupted.
          * Closes the underlying KafkaConsumer when the loop exits.
@@ -232,6 +379,8 @@ public class KafkaSubscriber {
         public void run(SeekParams initial, RecordHandler handler) {
             sessionsStarted.incrementAndGet();
             sessionsActive.incrementAndGet();
+            lastPollNanos = System.nanoTime();
+            LIVE_SESSIONS.add(this);
             long startedNanos = System.nanoTime();
             try {
                 runLoop(initial, handler);
@@ -243,13 +392,15 @@ public class KafkaSubscriber {
                 sessionsFailed.incrementAndGet();
                 logger.error("runLoop exited with exception on topic {}: {}", topic, e.toString(), e);
             } finally {
+                LIVE_SESSIONS.remove(this);
                 sessionsActive.decrementAndGet();
                 long durationMs = (System.nanoTime() - startedNanos) / 1_000_000;
                 logger.info("Subscribe session ended: topic={}, duration_ms={}, active_sessions={}, "
-                                + "totals[started={}, assigned={}, assign_timeouts={}, failed={}]",
+                                + "totals[started={}, assigned={}, assign_timeouts={}, failed={}, poll_stalls={}]",
                         topic, durationMs, sessionsActive.get(),
                         sessionsStarted.get(), sessionsAssigned.get(),
-                        sessionsAssignTimedOut.get(), sessionsFailed.get());
+                        sessionsAssignTimedOut.get(), sessionsFailed.get(),
+                        pollStallsDetected.get());
                 consumer.close();
             }
         }
@@ -280,6 +431,7 @@ public class KafkaSubscriber {
                                 topic, attempt + 1, ASSIGNMENT_MAX_ATTEMPTS, ASSIGNMENT_POLL_MS);
                         try {
                             consumer.poll(Duration.ofMillis(ASSIGNMENT_POLL_MS));
+                            markPolled();
                         } catch (org.apache.kafka.common.errors.WakeupException e) {
                             if (closed) return;
                             // A deadline wakeup falls through to the loop guard, which
@@ -321,6 +473,13 @@ public class KafkaSubscriber {
                     logger.info("Resubscribe: mode={}, value={}, speed={}, pause={}, backpressure={}, sample={}",
                             newParams.mode(), newParams.value(), newParams.speedMultiplier(),
                             newParams.pause(), newParams.backpressure(), newParams.sampleInterval());
+                    // A rebalance may have run while this session was paused,
+                    // so re-read the assignment before seeking it — seeking a
+                    // partition we no longer own throws.
+                    partitions = consumer.assignment();
+                    if (!newParams.pause()) {
+                        consumer.resume(partitions);
+                    }
                     applySeek(consumer, partitions, newParams);
                     speedMultiplier = newParams.speedMultiplier();
                     paused = newParams.pause();
@@ -332,13 +491,32 @@ public class KafkaSubscriber {
                     sampleCounter = 0;
                 }
 
-                // Pause: hold position, wait for new params to unpause.
+                // Pause: hold position, wait for new params to unpause — but
+                // KEEP POLLING. Sleeping here instead does not call poll(), so
+                // after max.poll.interval.ms the coordinator evicts this member
+                // and rebalances the group, and because the loop is asleep it
+                // never rejoins: the pod stays 1/1 Ready, the group still lists
+                // members, and consumption is silently dead until eventbus is
+                // restarted by hand. Kafka's own pause() holds the position
+                // with the group membership intact.
                 if (paused) {
+                    consumer.pause(partitions);
                     try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        return;
+                        ConsumerRecords<String, byte[]> drained =
+                                consumer.poll(Duration.ofMillis(PAUSED_POLL_MS));
+                        markPolled();
+                        partitions = consumer.assignment();
+                        if (!drained.isEmpty()) {
+                            // Only reachable for a partition handed to us by a
+                            // rebalance inside this poll — assignFromSubscribed()
+                            // resets per-partition pause state. Dropping is safe:
+                            // every resubscribe applies a seek before delivery
+                            // resumes, so nothing is skipped.
+                            logger.debug("Dropped {} record(s) fetched while paused on topic {}",
+                                    drained.count(), topic);
+                        }
+                    } catch (org.apache.kafka.common.errors.WakeupException e) {
+                        // resubscribe or close pending — handled at the top of the loop
                     }
                     continue;
                 }
@@ -346,13 +524,15 @@ public class KafkaSubscriber {
                 ConsumerRecords<String, byte[]> records;
                 try {
                     records = consumer.poll(Duration.ofMillis(500));
+                    markPolled();
+                    partitions = consumer.assignment();
                 } catch (org.apache.kafka.common.errors.WakeupException e) {
                     continue; // resubscribe or close pending
                 }
 
                 // DROP_OLD: if we got a full batch, the client may be behind.
                 // Skip to end so the next poll gets only the latest events.
-                if (backpressure == BackpressurePolicy.DROP_OLD && records.count() >= 500) {
+                if (backpressure == BackpressurePolicy.DROP_OLD && records.count() >= MAX_POLL_RECORDS) {
                     if (!partitions.isEmpty()) {
                         logger.info("DROP_OLD: client behind, seeking to end on topic {}", topic);
                         consumer.seekToEnd(partitions);
@@ -365,6 +545,17 @@ public class KafkaSubscriber {
                 }
 
                 for (ConsumerRecord<String, byte[]> record : records) {
+                    // Dispatching the records already handled in this batch may
+                    // have taken a while — a slow gRPC client under BUFFER, or a
+                    // pacing sleep. Anything that keeps this thread out of poll()
+                    // past max.poll.interval.ms gets the member evicted and every
+                    // consumer in its group rebalanced, so top the poll timer up
+                    // before carrying on with the batch.
+                    if (System.nanoTime() - lastPollNanos > PROCESSING_BUDGET_MS * 1_000_000L) {
+                        keepAlive();
+                        if (closed || pending.get() != null) break;
+                    }
+
                     // SAMPLE: only deliver every Nth record.
                     if (backpressure == BackpressurePolicy.SAMPLE && sampleInterval > 1) {
                         sampleCounter++;
@@ -381,14 +572,11 @@ public class KafkaSubscriber {
                             long elapsedMs = (System.nanoTime() - prevDeliveryNanos) / 1_000_000;
                             long sleepMs = targetDelayMs - elapsedMs;
                             if (sleepMs > 0) {
-                                try {
-                                    Thread.sleep(sleepMs);
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                    return;
+                                if (!paceSleep(sleepMs)) {
+                                    return; // interrupted
                                 }
                                 // Check for resubscribe after waking from sleep.
-                                if (pending.get() != null) break;
+                                if (closed || pending.get() != null) break;
                             }
                         }
                     }
@@ -466,7 +654,12 @@ public class KafkaSubscriber {
         // in a rebalance sat on the group for 5 minutes; 60000ms matches the
         // partition-assignment budget above and is 2x session.timeout.ms, well
         // clear of the 500ms poll cadence of the steady-state loop.
-        props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, "60000");
+        props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, Long.toString(MAX_POLL_INTERVAL_MS));
+        // Bound how much work one poll() can hand the loop. The loop keeps its
+        // group membership alive mid-batch (see Session.keepAlive), but a
+        // smaller batch is also a shorter worst-case delay before the next real
+        // poll. The DROP_OLD check above compares against this same constant.
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, Integer.toString(MAX_POLL_RECORDS));
 
         // Retry/reconnect backoff — prevents tight FindCoordinator loops from
         // overwhelming the KRaft controller when coordinator lookup fails.
