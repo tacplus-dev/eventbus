@@ -215,7 +215,10 @@ class ConsumerGroupBindingTest {
                 .setAudience("eventbus")
                 .setExpiration(System.currentTimeMillis() / 1000 + 3600)
                 .setSubType("service")
-                .setSubject(sub);
+                .setSubject(sub)
+                // Mint-time requirement as of the regenerated TokenWrapper: sign()
+                // refuses a token carrying no namespace claim.
+                .setNamespace("/local/test");
         token.sign(signingKey);
 
         AtomicReference<Throwable> error = new AtomicReference<>();

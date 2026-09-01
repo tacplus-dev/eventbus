@@ -23,7 +23,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -55,8 +57,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>{@code opa.NamespaceEntitlementsPolicy} stands in for a record type: it is
  * an ordinary generated message carrying a string {@code namespace} field, so
  * its builder has the same {@code setNamespace} the generated stamper lambda
- * calls. The fleet's own record types do not carry the field in this
- * checkout's generated model yet.
+ * calls. This class exercises {@link PublishHandler} directly, with a stamper
+ * written out by hand; {@code FleetRecordNamespaceStampTest} exercises the same
+ * behaviour on the fleet's own record types through the stamper the generator
+ * emitted.
  */
 class NamespaceStampTest {
 
@@ -188,15 +192,34 @@ class NamespaceStampTest {
     // ---- helpers ----
 
     private static TokenWrapper tokenWithNamespace(String namespace) throws Exception {
-        TokenWrapper token = baseToken().setCustomField("namespace", namespace);
+        TokenWrapper token = baseToken().setNamespace(namespace);
         token.sign(signingKey);
         return token;
     }
 
-    private static TokenWrapper tokenWithoutNamespace() throws Exception {
-        TokenWrapper token = baseToken();
-        token.sign(signingKey);
-        return token;
+    /**
+     * A verified token carrying no namespace claim.
+     *
+     * <p>It can no longer be produced by the local mint path: the regenerated
+     * {@code TokenWrapper.sign()} refuses to sign a token whose namespace claim
+     * is absent. It can still ARRIVE as one — {@link TokenWrapper#parse} is the
+     * wire path and imposes no such requirement — so this mints it the way a
+     * foreign issuer delivers it. Whether that path should stay reachable at
+     * all, and therefore whether PublishHandler's claimless refusal is live code
+     * or dead code, is an open design question deliberately left unanswered
+     * here: Q4 of workers/big8-eventbus-regen-namespace-2-questions.md.
+     */
+    private static TokenWrapper tokenWithoutNamespace() {
+        Base64.Encoder b64 = Base64.getUrlEncoder().withoutPadding();
+        String header = b64.encodeToString(
+                "{\"alg\":\"EdDSA\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = b64.encodeToString(
+                ("{\"iss\":\"test-issuer\",\"aud\":\"eventbus\",\"sub_type\":\"service\""
+                        + ",\"sub\":\"" + CALLER_SUB + "\""
+                        + ",\"exp\":" + (System.currentTimeMillis() / 1000 + 3600) + "}")
+                        .getBytes(StandardCharsets.UTF_8));
+        String signature = b64.encodeToString("not-checked-here".getBytes(StandardCharsets.UTF_8));
+        return TokenWrapper.parse(header + "." + payload + "." + signature);
     }
 
     private static TokenWrapper baseToken() {

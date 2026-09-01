@@ -71,6 +71,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class TopicAuthorizationTest {
 
     private static final String AUDIENCE = "eventbus";
+    private static final String NAMESPACE = "/local/test";
 
     private static final Metadata.Key<String> AUTHORIZATION =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
@@ -109,7 +110,10 @@ class TopicAuthorizationTest {
                 .setAudience(AUDIENCE)
                 .setExpiration(System.currentTimeMillis() / 1000 + 3600)
                 .setSubType("service")
-                .setSubject(service);
+                .setSubject(service)
+                // Mint-time requirement as of the regenerated TokenWrapper: sign()
+                // refuses a token carrying no namespace claim.
+                .setNamespace(NAMESPACE);
         tok.sign(key);
         return "Bearer " + tok.getBase64();
     }
@@ -121,7 +125,8 @@ class TopicAuthorizationTest {
                 .setAudience(AUDIENCE)
                 .setExpiration(System.currentTimeMillis() / 1000 + 3600)
                 .setSubType("user")
-                .setSubject("someone@example.com");
+                .setSubject("someone@example.com")
+                .setNamespace(NAMESPACE);
         tok.sign(key);
         return "Bearer " + tok.getBase64();
     }
