@@ -174,5 +174,35 @@ class TopicDiscoveryTest {
         assertTrue(conversations.hasActorSpiffeIdField(),
                 "aegis.ConversationEvent declares actor_spiffe_id");
     }
+
+    /**
+     * (spec.store_namespace): a topic type declaring a string namespace field
+     * must report hasNamespaceField() true, and one declaring none must report
+     * false. The flag is what decides whether a publish to the topic is refused
+     * for want of the caller's namespace claim, so a type that does not declare
+     * the field must never acquire it by accident.
+     */
+    @Test
+    void discoverTopics_hasNamespaceFieldOnlyWhenDeclared() throws IOException {
+        Path registryPath = Path.of(getClass().getClassLoader()
+                .getResource("test-registry.json").getPath());
+
+        TopicDiscovery discovery = new TopicDiscovery(registryPath);
+        List<TopicDiscovery.TopicField> topics = discovery.discoverTopics();
+
+        TopicDiscovery.TopicField conversations = topics.stream()
+                .filter(t -> t.getFieldName().equals("conversations"))
+                .findFirst()
+                .orElseThrow();
+        assertTrue(conversations.hasNamespaceField(),
+                "aegis.ConversationEvent declares namespace");
+
+        TopicDiscovery.TopicField eventStream = topics.stream()
+                .filter(t -> t.getFieldName().equals("event_stream"))
+                .findFirst()
+                .orElseThrow();
+        assertFalse(eventStream.hasNamespaceField(),
+                "aegis.TopologyEvent declares no namespace");
+    }
 }
 

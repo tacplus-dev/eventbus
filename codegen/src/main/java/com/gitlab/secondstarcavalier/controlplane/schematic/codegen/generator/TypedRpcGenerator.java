@@ -329,13 +329,23 @@ public class TypedRpcGenerator {
         String actorStamperArg = topic.hasActorSpiffeIdField()
                 ? "(msg, actorSpiffeId) -> msg.toBuilder().setActorSpiffeId(actorSpiffeId).build()"
                 : "null";
+        // namespaceStamper: present for topic types that declare the
+        // (spec.store_namespace) namespace field. Null for every other topic —
+        // and null is what makes the difference between a topic that is merely
+        // unstamped and one whose publishes are refused for want of the claim,
+        // so it must stay driven by the type, not by the caller.
+        String namespaceStamperArg = topic.hasNamespaceField()
+                ? "(msg, namespace) -> msg.toBuilder().setNamespace(namespace).build()"
+                : "null";
         if (qualifiedType.endsWith("TraceEvent")) {
             sb.append(indent).append("                            null, null, ").append(validatorRef)
-              .append(", ").append(actorStamperArg).append(");\n");
+              .append(", ").append(actorStamperArg)
+              .append(", ").append(namespaceStamperArg).append(");\n");
         } else {
             sb.append(indent).append("                            ").append(qualifiedType)
               .append("::getTraceId, onTraceId, ").append(validatorRef)
-              .append(", ").append(actorStamperArg).append(");\n");
+              .append(", ").append(actorStamperArg)
+              .append(", ").append(namespaceStamperArg).append(");\n");
         }
         sb.append(indent).append("                }));\n");
     }

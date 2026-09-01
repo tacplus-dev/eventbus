@@ -44,7 +44,7 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     private static final Logger logger = LoggerFactory.getLogger(PublishHandler.class);
 
     /** JWT claims to propagate as Kafka headers. */
-    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id", "act"};
+    private static final String[] CLAIM_KEYS = {"sub", "aud", "iss", "email", "service_id", "instance_id", "act", "namespace"};
 
     /**
      * Stamps identity onto a proto message. Generated per-type by the codegen
@@ -70,6 +70,26 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     }
 
     /**
+     * Stamps the caller's owning namespace onto a proto message. Generated
+     * per-type by the codegen plugin ONLY for topic types that declare a
+     * string namespace field — the (spec.store_namespace) tenant boundary
+     * every (spec.record) must carry.
+     *
+     * <p>Unlike {@link IdentityStamper} and {@link ActorStamper}, this one is
+     * NOT conditional. Those two leave the field as the publisher sent it when
+     * the claim is absent; doing that here would make the tenant boundary
+     * publisher-controllable for any token lacking the claim, which is the
+     * whole thing the boundary exists to prevent. A publish to a topic whose
+     * type declares the field, by a caller whose verified token carries no
+     * namespace claim, is refused PERMISSION_DENIED — the same posture the
+     * generated egress filter takes when it reads an empty caller namespace.
+     */
+    @FunctionalInterface
+    public interface NamespaceStamper<T> {
+        T stamp(T message, String namespace);
+    }
+
+    /**
      * Validates an inbound message against its declared proto constraints.
      * Generated per-type by the codegen plugin; throws when the message violates
      * one.
@@ -87,6 +107,10 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
     /** Optionally stamps actor_spiffe_id from the caller's `act` claim. Null
      *  for topic types that declare no actor_spiffe_id field. */
     private final ActorStamper<T> actorStamper;
+    /** Stamps the (spec.store_namespace) field from the caller's `namespace`
+     *  claim, or refuses the publish when the claim is absent. Null for topic
+     *  types that declare no namespace field. */
+    private final NamespaceStamper<T> namespaceStamper;
     /** Rejects malformed events at ingress. Null = no generated validator. */
     private final IngressValidator<T> validator;
     /** Extracts trace_id from an incoming message (field 200). Null = no tracing. */
@@ -147,6 +171,22 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                           Consumer<String> traceDispatcher,
                           IngressValidator<T> validator,
                           ActorStamper<T> actorStamper) {
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper,
+                traceIdExtractor, traceDispatcher, validator, actorStamper, null);
+    }
+
+    /** Backward-compatible constructor without a namespace stamper: the topic
+     *  type declares no (spec.store_namespace) field, so nothing is stamped
+     *  and no publish is refused for want of the claim. */
+    public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
+                          TopicManager topicManager,
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper,
+                          Function<T, String> traceIdExtractor,
+                          Consumer<String> traceDispatcher,
+                          IngressValidator<T> validator,
+                          ActorStamper<T> actorStamper,
+                          NamespaceStamper<T> namespaceStamper) {
         this.kafkaTopic = kafkaTopic;
         this.validator = validator;
         this.publisher = publisher;
@@ -154,6 +194,7 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         this.callerHeaders = extractCallerClaims();
         this.stamper = stamper;
         this.actorStamper = actorStamper;
+        this.namespaceStamper = namespaceStamper;
         this.traceIdExtractor = traceIdExtractor;
         this.traceDispatcher = traceDispatcher;
         topicManager.ensureTopicExists(kafkaTopic);
@@ -251,6 +292,29 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
             if (!actorSpiffeId.isEmpty()) {
                 stamped = actorStamper.stamp(stamped, actorSpiffeId);
             }
+        }
+        // (spec.store_namespace): stamp-or-refuse, deliberately not the
+        // stamp-if-present of the two above. The field is the row's tenant
+        // boundary and the generated egress filter holds every read to the
+        // reader's own namespace claim, so a row published with it empty is a
+        // row no legitimate caller can ever read. Letting the publisher's own
+        // value through when its token carries no claim would be worse still:
+        // the boundary would be whatever the publisher typed.
+        if (namespaceStamper != null) {
+            String namespace = callerHeaders.getOrDefault("caller.namespace", "");
+            if (namespace.isEmpty()) {
+                logger.warn("Refusing publish on {}: caller token carries no namespace claim", kafkaTopic);
+                if (terminated.compareAndSet(false, true)) {
+                    synchronized (responseObserver) {
+                        responseObserver.onError(Status.PERMISSION_DENIED
+                                .withDescription("caller token carries no namespace claim; "
+                                        + "this topic's type declares (spec.store_namespace)")
+                                .asRuntimeException());
+                    }
+                }
+                return;
+            }
+            stamped = namespaceStamper.stamp(stamped, namespace);
         }
         byte[] bytes = stamped.toByteArray();
         inFlight.incrementAndGet();

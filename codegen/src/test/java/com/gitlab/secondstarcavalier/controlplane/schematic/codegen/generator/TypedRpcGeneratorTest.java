@@ -315,4 +315,35 @@ class TypedRpcGeneratorTest {
                         + "List.of(\"other\"));"),
                 "other keeps its own policy: " + content);
     }
+
+    /**
+     * (spec.store_namespace): a topic whose type declares the namespace field
+     * must be wired with a namespace stamper; one that does not must be wired
+     * with null. The null is load-bearing — PublishHandler refuses a publish
+     * for want of the caller's namespace claim only when the stamper is
+     * present, so emitting one for a type with no such field would break every
+     * publish to it.
+     */
+    @Test
+    void generate_wiresNamespaceStamperOnlyForDeclaringTypes() throws IOException {
+        TopicDiscovery.TopicField withNs = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "conversations", "aegis.ConversationEvent",
+                "services.aegis.aegis.AegisState.Conversations", "services/aegis",
+                "services", true, "aegis", false, true);
+        TopicDiscovery.TopicField withoutNs = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream", "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream", "services/aegis");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(withAuth(List.of(withNs, withoutNs)));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+
+        assertTrue(content.contains(
+                        "(msg, namespace) -> msg.toBuilder().setNamespace(namespace).build()"),
+                "a type declaring namespace must be wired with a stamper: " + content);
+        assertEquals(1, content.split("setNamespace\\(namespace\\)", -1).length - 1,
+                "exactly one topic declares namespace, so exactly one stamper: " + content);
+    }
 }

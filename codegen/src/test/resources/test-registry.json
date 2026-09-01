@@ -37,7 +37,8 @@
       "package": "aegis",
       "fields": [
         {"name": "spiffe_id", "type": "TYPE_KIND_STRING"},
-        {"name": "actor_spiffe_id", "type": "TYPE_KIND_STRING"}
+        {"name": "actor_spiffe_id", "type": "TYPE_KIND_STRING"},
+        {"name": "namespace", "type": "TYPE_KIND_STRING"}
       ]
     }
   ],

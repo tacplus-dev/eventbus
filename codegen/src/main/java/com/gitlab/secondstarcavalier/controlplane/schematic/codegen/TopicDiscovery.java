@@ -43,6 +43,7 @@ public class TopicDiscovery {
         private final String typePathPrefix; // e.g. "services" or "common"
         private final boolean hasSpiffeIdField; // true if the type has a string spiffe_id field (C2S topics)
         private final boolean hasActorSpiffeIdField; // true if the type has a string actor_spiffe_id field (item 6 Piece A)
+        private final boolean hasNamespaceField; // true if the type has a string namespace field (the (spec.store_namespace) tenant boundary)
         private String javaOuterClass;      // resolved from the registry; see setJavaOuterClass
         // rpc name -> auth_services patterns, read from the registry entry for this
         // topic's generated <Topic>StateService. Resolved in discoverTopics().
@@ -78,6 +79,15 @@ public class TopicDiscovery {
                           String fieldType, String topicName, String packagePath,
                           String typePathPrefix, boolean hasSpiffeIdField,
                           String declaringPackage, boolean hasActorSpiffeIdField) {
+            this(stateName, statePackage, fieldName, fieldType, topicName, packagePath,
+                    typePathPrefix, hasSpiffeIdField, declaringPackage, hasActorSpiffeIdField, false);
+        }
+
+        public TopicField(String stateName, String statePackage, String fieldName,
+                          String fieldType, String topicName, String packagePath,
+                          String typePathPrefix, boolean hasSpiffeIdField,
+                          String declaringPackage, boolean hasActorSpiffeIdField,
+                          boolean hasNamespaceField) {
             this.declaringPackage = declaringPackage == null || declaringPackage.isEmpty()
                     ? statePackage : declaringPackage;
             this.stateName = stateName;
@@ -89,6 +99,7 @@ public class TopicDiscovery {
             this.typePathPrefix = typePathPrefix;
             this.hasSpiffeIdField = hasSpiffeIdField;
             this.hasActorSpiffeIdField = hasActorSpiffeIdField;
+            this.hasNamespaceField = hasNamespaceField;
         }
 
         public String getStateName() { return stateName; }
@@ -132,6 +143,7 @@ public class TopicDiscovery {
         public String getPackagePath() { return packagePath; }
         public boolean hasSpiffeIdField() { return hasSpiffeIdField; }
         public boolean hasActorSpiffeIdField() { return hasActorSpiffeIdField; }
+        public boolean hasNamespaceField() { return hasNamespaceField; }
 
 
         public String getFieldPascal() {
@@ -221,6 +233,15 @@ public class TopicDiscovery {
         Set<String> typesWithActorSpiffeId = new HashSet<>();
         collectTypesWithActorSpiffeIdField(root, typesWithActorSpiffeId);
 
+        // Build a set of type FQNs that have a "string namespace" field — the
+        // (spec.store_namespace) tenant boundary every (spec.record) must now
+        // declare. Matched by literal field name for the same reason spiffe_id
+        // is: registry.json carries no store_namespace marker (llmdesc's
+        // FieldDescriptor has no such key), so the annotation itself is not
+        // readable here. All five fleet records spell the field "namespace".
+        Set<String> typesWithNamespace = new HashSet<>();
+        collectTypesWithNamespaceField(root, typesWithNamespace);
+
         // Every top-level name protoc sees per proto package. A package whose
         // pascal-cased name is taken by one of them gets the "OuterClass" suffix.
         Map<String, Set<String>> topLevelNames = new HashMap<>();
@@ -234,7 +255,8 @@ public class TopicDiscovery {
         collectRpcAuthServices(root, rpcAuthServices);
 
         List<TopicField> topics = new ArrayList<>();
-        walkNode(root, topics, packagePathMap, typesWithSpiffeId, typesWithActorSpiffeId);
+        walkNode(root, topics, packagePathMap, typesWithSpiffeId, typesWithActorSpiffeId,
+                typesWithNamespace);
         for (TopicField topic : topics) {
             topic.setJavaOuterClass(resolveOuterClass(topic.typeProtoPackage(), topLevelNames));
             topic.setMethodAuthServices(resolveMethodAuth(topic, rpcAuthServices));
@@ -433,6 +455,36 @@ public class TopicDiscovery {
 
 
     /**
+     * Walks the registry tree collecting FQNs of types that have a "string
+     * namespace" field — the (spec.store_namespace) tenant boundary. Mirrors
+     * {@link #collectTypesWithSpiffeIdField} exactly, by literal field name.
+     */
+    private void collectTypesWithNamespaceField(JsonObject node, Set<String> result) {
+        if (node.has("types")) {
+            for (JsonElement elem : node.getAsJsonArray("types")) {
+                JsonObject type = elem.getAsJsonObject();
+                String fqn = getStr(type, "fqn");
+                if (!fqn.isEmpty() && type.has("fields")) {
+                    for (JsonElement fieldElem : type.getAsJsonArray("fields")) {
+                        JsonObject field = fieldElem.getAsJsonObject();
+                        if ("namespace".equals(getStr(field, "name"))
+                                && "TYPE_KIND_STRING".equals(getStr(field, "type"))) {
+                            result.add(fqn);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (node.has("children")) {
+            for (JsonElement child : node.getAsJsonArray("children")) {
+                collectTypesWithNamespaceField(child.getAsJsonObject(), result);
+            }
+        }
+    }
+
+
+    /**
      * The proto package declared by this registry node, e.g. the
      * vservices/agent-sensor node declares package "agentsensor". Falls back to
      * the supplied default when the node carries no types.
@@ -451,7 +503,7 @@ public class TopicDiscovery {
 
     private void walkNode(JsonObject node, List<TopicField> topics,
                           Map<String, String> packagePathMap, Set<String> typesWithSpiffeId,
-                          Set<String> typesWithActorSpiffeId) {
+                          Set<String> typesWithActorSpiffeId, Set<String> typesWithNamespace) {
         String packagePath = node.has("full_path")
                 ? node.get("full_path").getAsString() : "";
 
@@ -493,7 +545,8 @@ public class TopicDiscovery {
                             stateRoot, protoPackage, fieldName,
                             typeFqn, topicName, packagePath, typePrefix,
                             typesWithSpiffeId.contains(typeFqn), declaringPackage,
-                            typesWithActorSpiffeId.contains(typeFqn)));
+                            typesWithActorSpiffeId.contains(typeFqn),
+                            typesWithNamespace.contains(typeFqn)));
                 }
             }
         }
@@ -522,7 +575,7 @@ public class TopicDiscovery {
             JsonArray children = node.getAsJsonArray("children");
             for (JsonElement child : children) {
                 walkNode(child.getAsJsonObject(), topics, packagePathMap, typesWithSpiffeId,
-                        typesWithActorSpiffeId);
+                        typesWithActorSpiffeId, typesWithNamespace);
             }
         }
     }
