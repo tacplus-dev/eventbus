@@ -80,6 +80,8 @@ class FleetRecordNamespaceStampTest {
     private static final String AUDIENCE = "eventbus";
     private static final String CALLER_SERVICE = "agentsensor";
     private static final String CALLER_NAMESPACE = "/local/acme";
+    /** The tenant a publishing service writes a row on behalf of — never its own. */
+    private static final String ON_BEHALF_OF_NAMESPACE = "/local/someone-elses-tenant";
 
     private static final Metadata.Key<String> AUTHORIZATION =
             Metadata.Key.of("authorization", Metadata.ASCII_STRING_MARSHALLER);
@@ -122,29 +124,54 @@ class FleetRecordNamespaceStampTest {
     // ---- the stamp, on the record type the fleet actually publishes ----
 
     /**
-     * The publisher names someone else's tenant. What lands in the log is the
-     * caller's verified namespace claim.
+     * The paired control for the three-way stamp
+     * (decisions/namespace-fix-corrected-2026-09-02.md in the scotty repo),
+     * both halves on one topic, one server and one token so the ONLY thing that
+     * differs between them is whether the row arrived with its
+     * (spec.store_namespace) field set.
+     *
+     * <p>ROW SET: the publishing service tenanted the row itself, from identity
+     * it authenticated in its own request context — a write made on someone
+     * else's behalf. That value stands, which is the only way such a row can
+     * ever be read by the person it belongs to.
+     *
+     * <p>ROW EMPTY: a write the service made purely on its own behalf. The
+     * caller's own verified namespace claim is stamped on, exactly as before
+     * this behaviour existed.
      */
     @Test
-    void accountingRecord_isStampedWithTheCallersNamespace() throws Exception {
+    void accountingRecord_keepsARowSetNamespace_andStampsAnEmptyOne() throws Exception {
         ImmutableKey key = newTestKey();
         Server server = startServer(authorizerWithKey(key));
         try {
-            Accountingrecord.AccountingRecord sent = Accountingrecord.AccountingRecord.newBuilder()
+            Accountingrecord.AccountingRecord delegated = Accountingrecord.AccountingRecord.newBuilder()
                     .setAccountingId("acct-1")
                     .setLevel(Accounting.EventLevel.EVENT_LEVEL_INFO)
-                    .setNamespace("/local/someone-elses-tenant")
+                    .setNamespace(ON_BEHALF_OF_NAMESPACE)
                     .build();
+            Status delegatedStatus = call(server, serviceToken(key),
+                    erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM), delegated);
+            assertEquals(Status.Code.OK, delegatedStatus.getCode(),
+                    "publish should have succeeded; got " + delegatedStatus);
 
-            Status status = call(server, serviceToken(key),
-                    erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM), sent);
-            assertEquals(Status.Code.OK, status.getCode(), "publish should have succeeded; got " + status);
+            Accountingrecord.AccountingRecord ownBehalf = Accountingrecord.AccountingRecord.newBuilder()
+                    .setAccountingId("acct-2")
+                    .setLevel(Accounting.EventLevel.EVENT_LEVEL_INFO)
+                    .build();
+            Status ownStatus = call(server, serviceToken(key),
+                    erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM), ownBehalf);
+            assertEquals(Status.Code.OK, ownStatus.getCode(),
+                    "publish should have succeeded; got " + ownStatus);
 
-            KafkaSubscriber.Record record = readFirst(TopicRegistry.TOPIC_ACCOUNTING_RECORD_BUS_STREAM);
-            assertNotNull(record, "the publish should have reached the log");
+            List<KafkaSubscriber.Record> records =
+                    readFirst(TopicRegistry.TOPIC_ACCOUNTING_RECORD_BUS_STREAM, 2);
+            assertEquals(2, records.size(), "both publishes should have reached the log");
+            assertEquals(ON_BEHALF_OF_NAMESPACE,
+                    Accountingrecord.AccountingRecord.parseFrom(records.get(0).value()).getNamespace(),
+                    "a row the publishing service already tenanted must keep that tenant");
             assertEquals(CALLER_NAMESPACE,
-                    Accountingrecord.AccountingRecord.parseFrom(record.value()).getNamespace(),
-                    "the stored row must carry the caller's namespace claim, not the publisher's value");
+                    Accountingrecord.AccountingRecord.parseFrom(records.get(1).value()).getNamespace(),
+                    "a row that arrived with no tenant must carry the caller's namespace claim");
         } finally {
             shutdown(server);
         }
@@ -285,21 +312,28 @@ class FleetRecordNamespaceStampTest {
 
     /** The first record on a topic, or null if none arrives within 10s. */
     private static KafkaSubscriber.Record readFirst(String topic) throws Exception {
+        List<KafkaSubscriber.Record> records = readFirst(topic, 1);
+        return records.isEmpty() ? null : records.get(0);
+    }
+
+    /** The first {@code n} records on a topic, in log order. */
+    private static List<KafkaSubscriber.Record> readFirst(String topic, int n) throws Exception {
         KafkaSubscriber subscriber = new KafkaSubscriber(bootstrapAddress);
         KafkaSubscriber.SeekParams params = new KafkaSubscriber.SeekParams(
                 KafkaSubscriber.SeekMode.EARLIEST, 0, 0, null,
-                false, KafkaSubscriber.BackpressurePolicy.BUFFER, 1, List.of());
+                false, KafkaSubscriber.BackpressurePolicy.BUFFER, n, List.of());
         KafkaSubscriber.Session session = subscriber.createSession(topic, params);
         try {
-            AtomicReference<KafkaSubscriber.Record> received = new AtomicReference<>();
-            CountDownLatch latch = new CountDownLatch(1);
+            List<KafkaSubscriber.Record> received =
+                    java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+            CountDownLatch latch = new CountDownLatch(n);
             Thread.startVirtualThread(() -> session.run(params, record -> {
-                received.set(record);
+                received.add(record);
                 latch.countDown();
-                return false;
+                return received.size() < n;
             }));
             latch.await(10, TimeUnit.SECONDS);
-            return received.get();
+            return List.copyOf(received);
         } finally {
             session.close();
         }

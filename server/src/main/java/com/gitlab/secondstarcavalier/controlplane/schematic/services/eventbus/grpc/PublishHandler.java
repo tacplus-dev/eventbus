@@ -75,14 +75,23 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
      * string namespace field — the (spec.store_namespace) tenant boundary
      * every (spec.record) must carry.
      *
-     * <p>Unlike {@link IdentityStamper} and {@link ActorStamper}, this one is
-     * NOT conditional. Those two leave the field as the publisher sent it when
-     * the claim is absent; doing that here would make the tenant boundary
-     * publisher-controllable for any token lacking the claim, which is the
-     * whole thing the boundary exists to prevent. A publish to a topic whose
-     * type declares the field, by a caller whose verified token carries no
-     * namespace claim, is refused PERMISSION_DENIED — the same posture the
-     * generated egress filter takes when it reads an empty caller namespace.
+     * <p>Applied only when the row arrives with the field EMPTY. A row whose
+     * (spec.store_namespace) field is already set was tenanted by the
+     * publishing service's own already-authenticated code — the same
+     * server-side derivation (spec.store_principal)'s `acted_by` is written
+     * from — and is accepted as it stands, so a service writing a row on a
+     * specific user's behalf can land it in THAT user's tenant rather than its
+     * own. See decisions/namespace-fix-corrected-2026-09-02.md (scotty).
+     *
+     * <p>Unlike {@link IdentityStamper} and {@link ActorStamper}, the empty
+     * case is NOT conditional on the claim. Those two leave the field as the
+     * publisher sent it when the claim is absent; doing that here would leave
+     * an unset tenant boundary on a row that has none, which is the whole
+     * thing the boundary exists to prevent. A publish of a row with an empty
+     * namespace, to a topic whose type declares the field, by a caller whose
+     * verified token carries no namespace claim, is refused PERMISSION_DENIED
+     * — the same posture the generated egress filter takes when it reads an
+     * empty caller namespace.
      */
     @FunctionalInterface
     public interface NamespaceStamper<T> {
@@ -111,6 +120,11 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
      *  claim, or refuses the publish when the claim is absent. Null for topic
      *  types that declare no namespace field. */
     private final NamespaceStamper<T> namespaceStamper;
+    /** Reads the (spec.store_namespace) field already on an inbound message, so
+     *  a value the publishing service's own code set can be told apart from an
+     *  unset one. Generated alongside `namespaceStamper` and null exactly when
+     *  that is. */
+    private final Function<T, String> namespaceReader;
     /** Rejects malformed events at ingress. Null = no generated validator. */
     private final IngressValidator<T> validator;
     /** Extracts trace_id from an incoming message (field 200). Null = no tracing. */
@@ -187,6 +201,21 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                           IngressValidator<T> validator,
                           ActorStamper<T> actorStamper,
                           NamespaceStamper<T> namespaceStamper) {
+        this(kafkaTopic, publisher, topicManager, responseObserver, stamper,
+                traceIdExtractor, traceDispatcher, validator, actorStamper,
+                namespaceStamper, null);
+    }
+
+    public PublishHandler(String kafkaTopic, KafkaPublisher publisher,
+                          TopicManager topicManager,
+                          StreamObserver<Eventbus.PublishResponse> responseObserver,
+                          IdentityStamper<T> stamper,
+                          Function<T, String> traceIdExtractor,
+                          Consumer<String> traceDispatcher,
+                          IngressValidator<T> validator,
+                          ActorStamper<T> actorStamper,
+                          NamespaceStamper<T> namespaceStamper,
+                          Function<T, String> namespaceReader) {
         this.kafkaTopic = kafkaTopic;
         this.validator = validator;
         this.publisher = publisher;
@@ -195,6 +224,7 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         this.stamper = stamper;
         this.actorStamper = actorStamper;
         this.namespaceStamper = namespaceStamper;
+        this.namespaceReader = namespaceReader;
         this.traceIdExtractor = traceIdExtractor;
         this.traceDispatcher = traceDispatcher;
         topicManager.ensureTopicExists(kafkaTopic);
@@ -293,14 +323,32 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
                 stamped = actorStamper.stamp(stamped, actorSpiffeId);
             }
         }
-        // (spec.store_namespace): stamp-or-refuse, deliberately not the
-        // stamp-if-present of the two above. The field is the row's tenant
-        // boundary and the generated egress filter holds every read to the
-        // reader's own namespace claim, so a row published with it empty is a
-        // row no legitimate caller can ever read. Letting the publisher's own
-        // value through when its token carries no claim would be worse still:
-        // the boundary would be whatever the publisher typed.
-        if (namespaceStamper != null) {
+        // (spec.store_namespace): accept-or-stamp-or-refuse. The field is the
+        // row's tenant boundary and the generated egress filter holds every
+        // read to the reader's own namespace claim, so a row published with it
+        // empty is a row no legitimate caller can ever read.
+        //
+        // A row that arrives with the field ALREADY SET keeps that value: it
+        // was set by the publishing service's own row-construction code, which
+        // authenticated the acting user in its own request context before it
+        // ever reached this stream — the identical trust
+        // (spec.store_principal)'s `acted_by` already rides on, and the only
+        // way a service writing on a user's behalf can land the row in THAT
+        // user's tenant. Per decisions/namespace-fix-corrected-2026-09-02.md.
+        if (namespaceStamper != null
+                && (namespaceReader == null || namespaceReader.apply(stamped).isEmpty())) {
+            // The row left the publisher with no tenant of its own, so this is a
+            // write the publisher made purely on its own behalf and the publisher's
+            // own namespace is the right one. A write on someone else's behalf sets
+            // the field itself and never reaches here.
+            //
+            // There is deliberately NO branch on caller.act, because both a plain
+            // and a delegated service token resolve to the same header: kernel's
+            // delegated mint (IdentityServiceImpl.doMintDelegatedToken) sets the
+            // token's namespace from the delegated SUBJECT's own OPA result, never
+            // the delegate's. What must not change without changing this line: if
+            // that mint ever resolved namespace from the DELEGATE, every
+            // service-published record would be silently re-tenanted to the publisher.
             String namespace = callerHeaders.getOrDefault("caller.namespace", "");
             if (namespace.isEmpty()) {
                 logger.warn("Refusing publish on {}: caller token carries no namespace claim", kafkaTopic);

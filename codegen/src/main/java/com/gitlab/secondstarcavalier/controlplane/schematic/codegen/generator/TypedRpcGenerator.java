@@ -337,15 +337,24 @@ public class TypedRpcGenerator {
         String namespaceStamperArg = topic.hasNamespaceField()
                 ? "(msg, namespace) -> msg.toBuilder().setNamespace(namespace).build()"
                 : "null";
+        // namespaceReader: the read half of the same field, so PublishHandler can
+        // tell a row the publishing service already tenanted from one it left
+        // empty. Generated exactly when the stamper is — a stamper with no reader
+        // would silently fall back to overwriting.
+        String namespaceReaderArg = topic.hasNamespaceField()
+                ? qualifiedType + "::getNamespace"
+                : "null";
         if (qualifiedType.endsWith("TraceEvent")) {
             sb.append(indent).append("                            null, null, ").append(validatorRef)
               .append(", ").append(actorStamperArg)
-              .append(", ").append(namespaceStamperArg).append(");\n");
+              .append(", ").append(namespaceStamperArg)
+              .append(", ").append(namespaceReaderArg).append(");\n");
         } else {
             sb.append(indent).append("                            ").append(qualifiedType)
               .append("::getTraceId, onTraceId, ").append(validatorRef)
               .append(", ").append(actorStamperArg)
-              .append(", ").append(namespaceStamperArg).append(");\n");
+              .append(", ").append(namespaceStamperArg)
+              .append(", ").append(namespaceReaderArg).append(");\n");
         }
         sb.append(indent).append("                }));\n");
     }
