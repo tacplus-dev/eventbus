@@ -319,15 +319,29 @@ class TopicAuthorizationTest {
         }
     }
 
+    /**
+     * The agent event topic's SUBSCRIBE policy is ["stratum"], from the record's
+     * (spec.record).s2s_subscribe. Both halves are asserted here because the
+     * producing service losing its automatic read is the entire point of the
+     * declaration: before it existed, SubscribeToEventStream carried no policy
+     * of its own and fell back to the synthesized AgentEventBus wrapper's
+     * service-level list, which resolves to the OWNING PACKAGE. That gave
+     * agentsensor — the publisher — a read it was never meant to have, and
+     * denied stratum, the record store, the only read the topic exists to serve.
+     */
     @Test
-    void subscribeToAgentTopic_withEntitlement_isAllowedThrough() throws Exception {
+    void subscribeToAgentTopic_onlyTheDeclaredSubscriberGetsThrough() throws Exception {
         ImmutableKey key = newTestKey();
         Authorizer authorizer = authorizerWithKey(key);
         Server server = startServer(authorizer, true);
         try {
-            Status s = call(server, serviceToken(key, "agentsensor"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
-            assertEquals(Status.Code.UNAVAILABLE, s.getCode(),
-                    "agentsensor must reach the subscribe handler; got " + s);
+            Status store = call(server, serviceToken(key, "stratum"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
+            assertEquals(Status.Code.UNAVAILABLE, store.getCode(),
+                    "stratum is the declared subscriber and must reach the handler; got " + store);
+
+            Status producer = call(server, serviceToken(key, "agentsensor"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
+            assertEquals(Status.Code.PERMISSION_DENIED, producer.getCode(),
+                    "agentsensor publishes this topic but must not read it back; got " + producer);
         } finally {
             shutdown(server);
         }
