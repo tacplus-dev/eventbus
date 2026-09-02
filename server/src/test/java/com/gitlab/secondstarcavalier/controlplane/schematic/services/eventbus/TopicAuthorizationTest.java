@@ -269,7 +269,11 @@ class TopicAuthorizationTest {
     }
 
     @Test
-    void publishToAgentTopic_withoutEntitlement_isDenied() throws Exception {
+    void publishToAgentTopic_anyServiceIsAllowed() throws Exception {
+        // agentsensor's PublishTo* methods declare s2s: {auth_services: ["*"]}
+        // deliberately (any service may emit agent telemetry) — see
+        // decisions/eventbus-agentsensor-publish-star-is-deliberate-2026-09-01.md.
+        // This asserts the open producer policy, not a leak.
         ImmutableKey key = newTestKey();
         Authorizer authorizer = authorizerWithKey(key);
         Server server = startServer(authorizer, true);
@@ -277,8 +281,9 @@ class TopicAuthorizationTest {
             Status s = call(server, serviceToken(key, "sentinel"), PUBLISH_AGENT,
                     com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model
                             .types.vservices.agentsensor.Agentsensor.AgentEvent.getDefaultInstance());
-            assertEquals(Status.Code.PERMISSION_DENIED, s.getCode(),
-                    "sentinel must not forge agent events; got " + s);
+            assertNotEquals(Status.Code.PERMISSION_DENIED, s.getCode(),
+                    "sentinel holds a valid eventbus-audience token and agentsensor publish is "
+                            + "s2s: [\"*\"]; it must reach the handler, not be denied; got " + s);
         } finally {
             shutdown(server);
         }
@@ -360,6 +365,12 @@ class TopicAuthorizationTest {
      */
     @Test
     void sameRpcNameOnTwoTopics_policiesStayApart() throws Exception {
+        // Both accounting-record and agentsensor publish surfaces declare
+        // s2s: {auth_services: ["*"]} deliberately (see
+        // decisions/eventbus-agentsensor-publish-star-is-deliberate-2026-09-01.md),
+        // so a caller with a valid token now reaches BOTH topics' own handlers —
+        // this asserts each RPC is routed to its own topic's handler rather than
+        // being conflated by sharing an rpc name, not that one is denied.
         ImmutableKey key = newTestKey();
         Authorizer authorizer = authorizerWithKey(key);
         Server server = startServer(authorizer, true);
@@ -371,8 +382,10 @@ class TopicAuthorizationTest {
 
             Status other = call(server, serviceToken(key, "accountingrecord"),
                     PUBLISH_AGENT_SESSION_STREAM, AGENT_SESSION);
-            assertEquals(Status.Code.PERMISSION_DENIED, other.getCode(),
-                    "accountingrecord must not publish to the agentsensor session topic; got " + other);
+            assertEquals(Status.Code.UNAVAILABLE, other.getCode(),
+                    "accountingrecord must also reach the agentsensor session topic's own "
+                            + "handler (open producer policy), not be conflated with the "
+                            + "accounting topic's handler by sharing an rpc name; got " + other);
         } finally {
             shutdown(server);
         }
