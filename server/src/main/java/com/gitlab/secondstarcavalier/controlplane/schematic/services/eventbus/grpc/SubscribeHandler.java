@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
 
 /**
  * Generic bidi-streaming subscribe handler for typed event-bus RPCs.
@@ -35,6 +36,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * The client-supplied consumer_group is namespaced under the caller's own
  * verified identity before it reaches Kafka -- see
  * {@link #boundConsumerGroup}.
+ *
+ * On topics whose type declares the (spec.store_namespace) field, delivery is
+ * additionally pinned to the caller's own tenant -- see
+ * {@link #namespacePinned}.
  */
 public class SubscribeHandler<T extends MessageLite> implements StreamObserver<Eventbus.SubscribeRequest> {
 
@@ -115,17 +120,48 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 	private final String kafkaTopic;
 	private final StreamObserver<DynamicMessage> responseObserver;
 	private final ProtoParser<T> parser;
+	/** Reads the (spec.store_namespace) field off a parsed event, so delivery can
+	 *  be held to the subscriber's own tenant. Generated per-type exactly when
+	 *  PublishHandler's namespaceReader is -- null for topic types that declare
+	 *  no namespace field, and null is what makes such a topic exempt. */
+	private final Function<T, String> namespaceReader;
 	private volatile Session session;
 	private final AtomicBoolean firstMessage = new AtomicBoolean(true);
 	/** Set once the stream has been failed, so a later onNext does not fail it twice. */
 	private final AtomicBoolean streamFailed = new AtomicBoolean(false);
 
+	/** Backward-compatible constructor without a namespace reader: the topic type
+	 *  declares no (spec.store_namespace) field, so every subscriber sees the
+	 *  whole topic exactly as before. */
 	public SubscribeHandler(KafkaSubscriber subscriber, String kafkaTopic,
 			StreamObserver<DynamicMessage> responseObserver, ProtoParser<T> parser) {
+		this(subscriber, kafkaTopic, responseObserver, parser, null);
+	}
+
+	public SubscribeHandler(KafkaSubscriber subscriber, String kafkaTopic,
+			StreamObserver<DynamicMessage> responseObserver, ProtoParser<T> parser,
+			Function<T, String> namespaceReader) {
 		this.subscriber = subscriber;
 		this.kafkaTopic = kafkaTopic;
 		this.responseObserver = responseObserver;
 		this.parser = parser;
+		this.namespaceReader = namespaceReader;
+	}
+
+	/**
+	 * Whether a caller's namespace claim confines it to its own tenant.
+	 *
+	 * A /system caller is the fleet: shared platform services read every
+	 * tenant's events, which is what stratum's ingestion and the operator
+	 * depend on. A /tenants/&lt;t&gt; caller is one tenant-owned instance among
+	 * many and sees only its own.
+	 *
+	 * This is the runtime branch the generated S2S record plane takes on the
+	 * same claim (recordnamespace_gen.go's __nsPinned), spelled the same way on
+	 * purpose: the two seams must agree on what "the caller's own tenant" means.
+	 */
+	static boolean namespacePinned(String callerNamespace) {
+		return !callerNamespace.startsWith("/system");
 	}
 
 	public static DynamicMessage subscribeRecordDefaultInstance() {
@@ -159,6 +195,34 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 			return;
 		}
 
+		// The tenant boundary on the read side. It is read HERE, on the gRPC
+		// thread, because the Kafka consumer below runs on a virtual thread
+		// where the caller's gRPC context is no longer current -- the claim
+		// would come back empty if it were read down there.
+		//
+		// Only topics whose type declares (spec.store_namespace) are gated:
+		// namespaceReader is null for every other topic and nothing changes for
+		// them, including for an anonymous subscriber. On a topic that DOES
+		// declare it, an absent claim is refused rather than served fleet-wide,
+		// which is the posture PublishHandler already takes on exactly the same
+		// set of topics (see its (spec.store_namespace) block). Serving instead
+		// would hand every tenant's events to a caller that proved no tenant --
+		// the one outcome the field exists to prevent.
+		String callerNamespace = Auth.callerNamespaceFromContext();
+		if (namespaceReader != null && callerNamespace.isEmpty()) {
+			logger.warn("Refusing subscribe on {}: caller token carries no namespace claim", kafkaTopic);
+			if (streamFailed.compareAndSet(false, true)) {
+				synchronized (responseObserver) {
+					responseObserver.onError(Status.PERMISSION_DENIED
+							.withDescription("caller token carries no namespace claim; "
+									+ "this topic's type declares (spec.store_namespace)")
+							.asRuntimeException());
+				}
+			}
+			return;
+		}
+		final boolean nsPinned = namespaceReader != null && namespacePinned(callerNamespace);
+
 		SeekParams params = toSeekParams(request, callerSub);
 
 		if (firstMessage.compareAndSet(true, false)) {
@@ -173,7 +237,19 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 				try {
 					s.run(params, record -> {
 						try {
-							parser.parse(record.value());
+							T event = parser.parse(record.value());
+							// Another tenant's event on a shared topic: drop it
+							// and keep streaming. Not an error -- the events are
+							// legitimately interleaved on one Kafka topic, this
+							// caller is simply not entitled to this one.
+							//
+							// The row's OWN field is authoritative, not the
+							// publisher's claim on the Kafka header: a service
+							// publishing on another tenant's behalf sets the
+							// field itself and the two differ exactly there.
+							if (nsPinned && !callerNamespace.equals(namespaceReader.apply(event))) {
+								return true;
+							}
 							DynamicMessage message = subscribeRecordFor(record);
 							synchronized (responseObserver) {
 								responseObserver.onNext(message);

@@ -187,7 +187,7 @@ public class TypedRpcGenerator {
             sb.append("                ServerServiceDefinition.builder(\"")
               .append(perTopicServiceName(topic)).append("\");\n");
             emitLazyPublishBinding(sb, topic, "PUBLISH_TO_" + perTopicConst, topicConstName, qualifiedType, "    ");
-            emitLazySubscribeBinding(sb, "SUBSCRIBE_TO_" + perTopicConst, topicConstName, qualifiedType, "    ");
+            emitLazySubscribeBinding(sb, topic, "SUBSCRIBE_TO_" + perTopicConst, topicConstName, qualifiedType, "    ");
             sb.append("            defs.add(svc.build());\n");
             sb.append("        }\n\n");
         }
@@ -360,7 +360,7 @@ public class TypedRpcGenerator {
     }
 
     /** Emits a lazy Subscribe binding onto a builder named {@code svc}. */
-    private void emitLazySubscribeBinding(StringBuilder sb, String descriptorConst,
+    private void emitLazySubscribeBinding(StringBuilder sb, TopicField topic, String descriptorConst,
             String topicConstName, String qualifiedType, String indent) {
         sb.append(indent).append("        svc.addMethod(").append(descriptorConst).append(",\n");
         sb.append(indent).append("            ServerCalls.asyncBidiStreamingCall(\n");
@@ -370,9 +370,17 @@ public class TypedRpcGenerator {
         sb.append(indent).append("                        resp.onError(Status.UNAVAILABLE.withDescription(\"Kafka not yet initialized\").asRuntimeException());\n");
         sb.append(indent).append("                        return noOpObserver();\n");
         sb.append(indent).append("                    }\n");
+        // namespaceReader: the same read half emitLazyPublishBinding hands
+        // PublishHandler, so the subscribe side can hold delivery to the
+        // caller's own tenant. Generated exactly when that one is — a topic
+        // whose type declares no namespace field stays fleet-wide for everyone.
+        String namespaceReaderArg = topic.hasNamespaceField()
+                ? qualifiedType + "::getNamespace"
+                : "null";
         sb.append(indent).append("                    return new SubscribeHandler<>(sub, TopicRegistry.TOPIC_")
           .append(topicConstName).append(", resp,\n");
-        sb.append(indent).append("                            ").append(qualifiedType).append("::parseFrom);\n");
+        sb.append(indent).append("                            ").append(qualifiedType).append("::parseFrom, ")
+          .append(namespaceReaderArg).append(");\n");
         sb.append(indent).append("                }));\n");
     }
 

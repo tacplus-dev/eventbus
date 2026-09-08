@@ -346,4 +346,35 @@ class TypedRpcGeneratorTest {
         assertEquals(1, content.split("setNamespace\\(namespace\\)", -1).length - 1,
                 "exactly one topic declares namespace, so exactly one stamper: " + content);
     }
+
+    /**
+     * The read half, on the SUBSCRIBE binding (item 4). SubscribeHandler pins
+     * delivery to the caller's own tenant only when it has a namespace reader,
+     * so the null for a non-declaring type is as load-bearing as the stamper's:
+     * emitting a reader for a type with no such field would not compile, and
+     * omitting one for a type that has it leaves the topic fleet-wide.
+     */
+    @Test
+    void generate_wiresSubscribeNamespaceReaderOnlyForDeclaringTypes() throws IOException {
+        TopicDiscovery.TopicField withNs = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "conversations", "aegis.ConversationEvent",
+                "services.aegis.aegis.AegisState.Conversations", "services/aegis",
+                "services", true, "aegis", false, true);
+        TopicDiscovery.TopicField withoutNs = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream", "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream", "services/aegis");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(withAuth(List.of(withNs, withoutNs)));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+
+        assertTrue(content.contains("::parseFrom, Aegis.ConversationEvent::getNamespace)"),
+                "the declaring type's subscribe binding must carry a namespace reader: " + content);
+        assertTrue(content.contains("::parseFrom, null)"),
+                "the non-declaring type's subscribe binding must pass null: " + content);
+        assertEquals(1, content.split("::parseFrom, null\\)", -1).length - 1,
+                "exactly one topic declares no namespace, so exactly one null reader: " + content);
+    }
 }
