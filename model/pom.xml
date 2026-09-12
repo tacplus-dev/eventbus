@@ -245,7 +245,7 @@
 		<exec-plugin.version>3.5.0</exec-plugin.version>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<protobuf.version>4.36.0</protobuf.version>
+		<protobuf.version>4.36.1</protobuf.version>
 		<grpc.version>1.79.0</grpc.version>
 		<snakeyaml.version>2.5</snakeyaml.version>
 		<toml4j.version>0.7.2</toml4j.version>
