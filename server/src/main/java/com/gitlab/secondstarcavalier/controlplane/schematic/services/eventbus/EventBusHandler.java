@@ -65,11 +65,19 @@ public class EventBusHandler implements Handler {
 	private static final Logger logger = LoggerFactory.getLogger(EventBusHandler.class);
 	private static final String SERVICE_NAME = MetaData.PROJECT_NAME;
 	private static final long[] INIT_RETRY_DELAYS_MS = {2000, 4000, 8000, 16000, 30000};
+	/**
+	 * Consecutive failed Kafka health probes before checkHealth() reports
+	 * UNHEALTHY. At the health reporter's fixed 10s cadence this is ~30s of
+	 * tolerated Kafka unavailability.
+	 */
+	private static final int UNHEALTHY_STREAK_THRESHOLD = 3;
 
 	private final ServiceManager sm;
 	private final ScheduledExecutorService refreshScheduler;
 	private volatile boolean initialized = false;
 	private volatile boolean initStarted = false;
+	/** Consecutive failed Kafka health probes; health-reporter thread only. */
+	private int clusterHealthFailures = 0;
 
 	// Initialized on first newTlsCert() delivery.
 	// Volatile so additionalServices() (called before newTlsCert) can
@@ -263,6 +271,12 @@ public class EventBusHandler implements Handler {
 	 *
 	 * Before Kafka is initialized (waiting for TLS), we report HEALTHY
 	 * because the startup probe covers that window.
+	 *
+	 * A single failed probe is not enough: a consumer-group rebalance or a
+	 * broker recovering after a restart makes describeCluster() slow, and that
+	 * is expected, not wedged. Only {@link #UNHEALTHY_STREAK_THRESHOLD}
+	 * consecutive failures report UNHEALTHY, matching the usual k8s
+	 * {@code failureThreshold: 3}.
 	 */
 	@Override
 	public InstanceStatus checkHealth() {
@@ -272,11 +286,30 @@ public class EventBusHandler implements Handler {
 		}
 		try {
 			topicManager.getClusterHealth();
-			return InstanceStatus.INSTANCE_STATUS_HEALTHY;
+			return recordProbe(true, null);
 		} catch (Exception e) {
-			logger.warn("Kafka health check failed — reporting UNHEALTHY: {}", e.getMessage());
-			return InstanceStatus.INSTANCE_STATUS_UNHEALTHY;
+			return recordProbe(false, e.getMessage());
 		}
+	}
+
+	/**
+	 * Folds one probe result into the consecutive-failure streak and returns
+	 * the status to report. Called only from the health-reporter thread.
+	 */
+	InstanceStatus recordProbe(boolean ok, String failureMessage) {
+		if (ok) {
+			clusterHealthFailures = 0;
+			return InstanceStatus.INSTANCE_STATUS_HEALTHY;
+		}
+		clusterHealthFailures++;
+		if (clusterHealthFailures < UNHEALTHY_STREAK_THRESHOLD) {
+			logger.warn("Kafka health check failed ({}/{} consecutive) — still reporting HEALTHY: {}",
+					clusterHealthFailures, UNHEALTHY_STREAK_THRESHOLD, failureMessage);
+			return InstanceStatus.INSTANCE_STATUS_HEALTHY;
+		}
+		logger.warn("Kafka health check failed ({} consecutive) — reporting UNHEALTHY: {}",
+				clusterHealthFailures, failureMessage);
+		return InstanceStatus.INSTANCE_STATUS_UNHEALTHY;
 	}
 
 

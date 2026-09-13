@@ -683,7 +683,24 @@ public class KafkaSubscriber {
             consumer.subscribe(Collections.singletonList(topic));
             // Initial poll to trigger partition assignment — allow enough time
             // for the consumer group rebalance protocol to complete.
-            consumer.poll(Duration.ofMillis(5000));
+            //
+            // This runs on the gRPC request thread, and poll(timeout) does not
+            // bound the JoinGroup/SyncGroup handshake (see runLoop below), so a
+            // group stuck rebalancing would park that thread indefinitely. Arm
+            // the same wall-clock deadline the assignment wait uses. If it
+            // fires, assignment is left to runLoop's watchdogged wait.
+            ScheduledFuture<?> watchdog = ASSIGNMENT_WATCHDOG.schedule(() -> {
+                logger.warn("Initial assignment poll of {}ms exceeded on topic {}, waking consumer",
+                        ASSIGNMENT_POLL_MS, topic);
+                consumer.wakeup();
+            }, ASSIGNMENT_POLL_MS, TimeUnit.MILLISECONDS);
+            try {
+                consumer.poll(Duration.ofMillis(ASSIGNMENT_POLL_MS));
+            } catch (org.apache.kafka.common.errors.WakeupException e) {
+                // Deadline expired mid-handshake — runLoop waits for assignment.
+            } finally {
+                watchdog.cancel(false);
+            }
         }
 
         return new Session(topic, consumer);
