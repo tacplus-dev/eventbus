@@ -67,10 +67,37 @@ public class EventBusHandler implements Handler {
 	private static final long[] INIT_RETRY_DELAYS_MS = {2000, 4000, 8000, 16000, 30000};
 	/**
 	 * Consecutive failed Kafka health probes before checkHealth() reports
-	 * UNHEALTHY. At the health reporter's fixed 10s cadence this is ~30s of
+	 * UNHEALTHY. At the health reporter's fixed 10s cadence this is ~240s of
 	 * tolerated Kafka unavailability.
+	 *
+	 * It was 3 (~30s), chosen to match the usual k8s {@code failureThreshold:
+	 * 3}. That turned out to be an order of magnitude short of reality: after a
+	 * restart every downstream Subscribe RPC reconnects at once (~25 sessions
+	 * inside one second), and while the resulting rebalance runs,
+	 * {@code describeCluster()} does time out. Measured assignment waits in
+	 * that window were 87-135s, so a 30s budget guaranteed the pod was killed
+	 * mid-rebalance, every time, which made the next rebalance worse.
+	 *
+	 * A post-restart rebalance is functionally a second cold start, so this is
+	 * sized like one: 240s sits between the real 135s worst case and the 300s
+	 * the startup probe already allows, and it trips BEFORE the 300s k8s
+	 * liveness probe, so eventbus's own verdict is what restarts the pod and
+	 * the kubelet stays the backstop.
+	 *
+	 * The wedged-KRaft-controller case this check exists for still restarts the
+	 * pod, just at ~4 minutes instead of ~30 seconds — a deliberate trade, and
+	 * still inside the launcher's 5m HEALTH_TIMEOUT. See
+	 * {@code decisions/2026-09-13-assignment-budget-equals-poll-interval.md}.
 	 */
-	private static final int UNHEALTHY_STREAK_THRESHOLD = 3;
+	static final int UNHEALTHY_STREAK_THRESHOLD = 24;
+
+	/**
+	 * The health reporter's fixed cadence, mirrored from the generated
+	 * {@code HealthReporter.REPORT_INTERVAL_MS}. Only used to express the
+	 * threshold above as wall-clock time in the tests — if tacplus ever changes
+	 * that constant, {@code HealthStreakTest} is what notices.
+	 */
+	static final long HEALTH_REPORT_INTERVAL_MS = 10_000;
 
 	private final ServiceManager sm;
 	private final ScheduledExecutorService refreshScheduler;
@@ -275,8 +302,8 @@ public class EventBusHandler implements Handler {
 	 * A single failed probe is not enough: a consumer-group rebalance or a
 	 * broker recovering after a restart makes describeCluster() slow, and that
 	 * is expected, not wedged. Only {@link #UNHEALTHY_STREAK_THRESHOLD}
-	 * consecutive failures report UNHEALTHY, matching the usual k8s
-	 * {@code failureThreshold: 3}.
+	 * consecutive failures report UNHEALTHY — sized against the real measured
+	 * duration of a post-restart rebalance, not against the k8s probe default.
 	 */
 	@Override
 	public InstanceStatus checkHealth() {

@@ -56,9 +56,17 @@ public class KafkaSubscriber {
      * does not bound the JoinGroup/SyncGroup handshake and can block far past
      * its argument when the consumer group is stuck rebalancing.
      * Override via env var {@code EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS}.
+     *
+     * 36 attempts x 5000ms = a 180s budget. It was 12 (60s), which was exactly
+     * {@link #MAX_POLL_INTERVAL_MS} — see the invariant in the static block
+     * below for why those two being equal is what turned a normal rebalance
+     * into an unrecoverable crash loop, and
+     * {@code decisions/2026-09-13-assignment-budget-equals-poll-interval.md}
+     * for the incident. The real observed worst case under a full
+     * ~25-subscriber reconnect herd was 135s, so 180s leaves margin.
      */
     static final int ASSIGNMENT_MAX_ATTEMPTS =
-            intFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS", 12);
+            intFromEnv("EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS", 36);
 
     /**
      * Per-attempt poll timeout (ms) while waiting for partition assignment.
@@ -78,18 +86,46 @@ public class KafkaSubscriber {
      * which is exactly the failure where the group reports Stable, the pod is
      * 1/1 Ready, and nothing is consumed.
      * Override via env var {@code EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS}.
+     *
+     * This MUST stay strictly greater than the assignment budget
+     * ({@link #ASSIGNMENT_MAX_ATTEMPTS} x {@link #ASSIGNMENT_POLL_MS}): a
+     * session waiting for its partitions is blocked inside poll(), so if the
+     * two are equal, every member of a rebalancing group abandons its wait and
+     * is evicted by the coordinator at the same instant. See the static block.
+     *
+     * Raised 60000 -> 300000 (Kafka's own default). Eviction is no longer the
+     * mechanism that surfaces a wedged consumer — {@link #POLL_STALL_WARN_MS}
+     * is, and it still reports at 60s, so the "Stable but silently dead" mode
+     * above is detected exactly as fast as before.
      */
     static final long MAX_POLL_INTERVAL_MS =
-            longFromEnv("EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS", 60000L);
+            longFromEnv("EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS", 300000L);
+
+    /**
+     * How long a session may go without a successful poll() before the
+     * poll-stall watchdog reports it. Deliberately independent of
+     * {@link #MAX_POLL_INTERVAL_MS}: this is the observability threshold, that
+     * one is the coordinator's eviction ceiling. Keeping this at 60s preserves
+     * the detection latency the watchdog had when the two were one constant,
+     * while letting the eviction ceiling rise far enough that a slow rebalance
+     * no longer evicts a whole group mid-assignment.
+     */
+    static final long POLL_STALL_WARN_MS =
+            longFromEnv("EVENTBUS_SUBSCRIBER_POLL_STALL_WARN_MS", 60000L);
 
     /**
      * Budget (ms) for work done between two poll() calls — pacing sleeps,
      * record dispatch to a slow gRPC client, everything on the poll thread.
-     * Half of {@link #MAX_POLL_INTERVAL_MS}, so a session that overruns the
-     * budget still has a full interval of slack to get back into poll().
-     * Also the scan period of the poll-stall watchdog.
+     *
+     * Half of {@link #POLL_STALL_WARN_MS} rather than of
+     * {@link #MAX_POLL_INTERVAL_MS}: the keep-alive this drives must fire
+     * BEFORE the poll-stall watchdog would report the session, or every
+     * legitimately slow batch logs a spurious STALLED error. Deriving it from
+     * the eviction ceiling instead put it at 150s, i.e. long after the 60s
+     * warning. At 30s a session that overruns the budget still has the entire
+     * remaining interval to get back into poll() well clear of eviction.
      */
-    static final long PROCESSING_BUDGET_MS = MAX_POLL_INTERVAL_MS / 2;
+    static final long PROCESSING_BUDGET_MS = POLL_STALL_WARN_MS / 2;
 
     /**
      * {@code max.poll.records}. Set explicitly because the DROP_OLD
@@ -125,14 +161,50 @@ public class KafkaSubscriber {
     private static final Set<Session> LIVE_SESSIONS = ConcurrentHashMap.newKeySet();
 
     static {
+        // A session waiting for partitions is blocked inside poll(), so the
+        // assignment budget is also a stretch of not polling. If the budget
+        // reaches max.poll.interval.ms, then at that instant every member of a
+        // rebalancing group both gives up its own wait AND is evicted by the
+        // coordinator — and each of those departures starts yet another
+        // rebalance, so the group can never converge. That is not a tuning
+        // nicety: with both at 60000ms it crash-looped eventbus in production
+        // (16 members of one group abandoned at the same second, 7 restarts).
+        // Fail loudly at startup rather than rediscover it from a pod log.
+        validateTimeoutBudgets(ASSIGNMENT_MAX_ATTEMPTS, ASSIGNMENT_POLL_MS, MAX_POLL_INTERVAL_MS);
+
         // Liveness signal. A session that stops calling poll() takes its whole
         // consumer group down with it (the coordinator cannot complete a
         // rebalance until every member rejoins) and does it silently — no
         // exception, no unhealthy pod, just lag that stops moving. The loop
         // below is written so this never happens; this scan is what tells us
         // when it does anyway, instead of leaving it to be found by hand.
+        long scanPeriodMs = POLL_STALL_WARN_MS / 2;
         ASSIGNMENT_WATCHDOG.scheduleAtFixedRate(KafkaSubscriber::scanForPollStalls,
-                PROCESSING_BUDGET_MS, PROCESSING_BUDGET_MS, TimeUnit.MILLISECONDS);
+                scanPeriodMs, scanPeriodMs, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Enforces the one relation between these three settings that must hold.
+     * Package-private and parameterised rather than inlined into the static
+     * block so the relation can be tested against the values that actually
+     * crash-looped production.
+     *
+     * @throws IllegalStateException if the assignment budget reaches the
+     *         coordinator's eviction ceiling
+     */
+    static void validateTimeoutBudgets(int assignmentAttempts, long assignmentPollMs,
+                                       long maxPollIntervalMs) {
+        long assignmentBudgetMs = assignmentAttempts * assignmentPollMs;
+        if (assignmentBudgetMs >= maxPollIntervalMs) {
+            throw new IllegalStateException(
+                    "Partition-assignment budget (" + assignmentAttempts + " x "
+                    + assignmentPollMs + "ms = " + assignmentBudgetMs + "ms) must be strictly "
+                    + "less than max.poll.interval.ms (" + maxPollIntervalMs + "ms), or a "
+                    + "group rebalancing for longer than the budget evicts every member at the "
+                    + "moment they all give up waiting and can never converge. Raise "
+                    + "EVENTBUS_SUBSCRIBER_MAX_POLL_INTERVAL_MS or lower "
+                    + "EVENTBUS_SUBSCRIBER_ASSIGNMENT_ATTEMPTS.");
+        }
     }
 
     private static void scanForPollStalls() {
@@ -309,13 +381,14 @@ public class KafkaSubscriber {
         private void checkPollStall(long nowNanos) {
             if (pollStallReported || closed) return;
             long stalledMs = (nowNanos - lastPollNanos) / 1_000_000;
-            if (stalledMs <= MAX_POLL_INTERVAL_MS) return;
+            if (stalledMs <= POLL_STALL_WARN_MS) return;
             pollStallReported = true;
             pollStallsDetected.incrementAndGet();
             logger.error("Consumer poll loop STALLED on topic {}: no successful poll for {}ms "
-                            + "(max.poll.interval.ms={}). This member will be evicted and every "
-                            + "consumer in its group rebalanced; consumption stops until it polls again.",
-                    topic, stalledMs, MAX_POLL_INTERVAL_MS);
+                            + "(warn after {}ms, coordinator evicts at max.poll.interval.ms={}). "
+                            + "Consumption stops until it polls again; if it reaches the eviction "
+                            + "ceiling this member is dropped and its whole group rebalanced.",
+                    topic, stalledMs, POLL_STALL_WARN_MS, MAX_POLL_INTERVAL_MS);
         }
 
         /**
@@ -650,10 +723,13 @@ public class KafkaSubscriber {
         props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "5000");
         // Bound how long a wedged consumer can hold its partitions before the
-        // coordinator evicts it. The 300000ms default meant a subscriber stuck
-        // in a rebalance sat on the group for 5 minutes; 60000ms matches the
-        // partition-assignment budget above and is 2x session.timeout.ms, well
-        // clear of the 500ms poll cadence of the steady-state loop.
+        // coordinator evicts it. This must stay well ABOVE the
+        // partition-assignment budget, not match it: a session waiting for
+        // partitions is blocked inside poll(), so matching the two evicts every
+        // member of a slowly-rebalancing group at the same instant they all give
+        // up waiting, and each departure triggers another rebalance the group
+        // then cannot finish. A wedged consumer is surfaced by the poll-stall
+        // watchdog at POLL_STALL_WARN_MS instead, which is unchanged at 60s.
         props.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, Long.toString(MAX_POLL_INTERVAL_MS));
         // Bound how much work one poll() can hand the loop. The loop keeps its
         // group membership alive mid-batch (see Session.keepAlive), but a
