@@ -1,8 +1,8 @@
 # Deploying the assignment-budget crash-loop fix: rebuild, rollout, live verification
 
 **Date:** 2026-09-13 (14:08–15:30 MDT)
-**Status:** DEPLOYED AND VERIFIED LIVE — eventbus0 stable, 0 restarts, through a real post-restart
-rebalance with a 27-subscriber reconnect herd.
+**Status:** DEPLOYED AND VERIFIED LIVE — eventbus0 stable, 0 restarts over 31 minutes, through a
+real post-restart rebalance with a 27-subscriber reconnect herd.
 **Deploys:** `eventbus@ff7704e` (this repo) and `operator@90dc6d9` (probe helper only — see §5, it
 is NOT deployed as the branch tip).
 **Companion to:** `decisions/2026-09-13-assignment-budget-equals-poll-interval.md`, which diagnosed
@@ -27,12 +27,12 @@ rebalancing process looks like.
 
 ```
 $ kubectl get pods -n schematic | grep eventbus     # 15:28 MDT
-eventbus0-7d859dbc59-xkkd8   1/1   Running   0   15m
+eventbus0-7d859dbc59-xkkd8   1/1   Running   0   31m
 ```
 
-**0 restarts across 15+ minutes of continuous polling** (sampled every 30–60s from 15:13:10 to
-15:28:50), against a prior rate of one restart per ~6.6 minutes. Over that same window the old pod
-would have restarted twice.
+**0 restarts across 31 minutes of continuous polling** (sampled every 30–120s from 15:13:10 to
+15:45:06), against a prior rate of one restart per ~6.6 minutes. Over that same window the old pod
+would have restarted four to five times.
 
 Running image digest verified equal to the one I pushed, not a stale cached layer:
 
@@ -67,7 +67,7 @@ Three things changed and all three are confirmed live:
 - poll-stall detection **decoupled** from the eviction ceiling — it now warns at 60s and says so
   in the message, instead of coinciding with eviction
 
-**Read the STALLED lines correctly.** There are 30 of them on the healthy pod and that is not a
+**Read the STALLED lines correctly.** There are 34 of them on the healthy pod and that is not a
 regression — post-fix, `STALLED` is a deliberately non-fatal 60s warning whose own text names a
 300s ceiling it never reached. The pre-fix line was fatal because the warn threshold *was* the
 eviction ceiling. Grepping for the string alone would give the wrong answer here.
@@ -154,12 +154,13 @@ harmful, but it is what bumping the operator image does here.
 - operator `go build ./...`, the `validate-generated-output` gate, and `go test ./pkg/helm/...`:
   all pass on the tree that was shipped.
 - Image digest on the running pod matched the pushed digest.
-- 15+ minutes of live polling at 30–60s intervals, 0 restarts.
+- 31 minutes of live polling at 30–120s intervals, 0 restarts; final `restartCount` read directly
+  off the pod as `0`. Fleet 20/20 Running, operator `reconcile failed` count 0, helm rev 28610.
 
 ## 7. Honest limits
 
-- 15 minutes is enough to clear the pre-fix ~6.6-minute restart cadence twice over, and it covers
-  the post-restart rebalance that was the actual trigger — but it is not a long soak. If the
+- 31 minutes clears the pre-fix ~6.6-minute restart cadence four times over, and it covers the
+  post-restart rebalance that was the actual trigger — but it is still not a long soak. If the
   crash-loop had a slower second mode, this would not have caught it.
 - The 18 assignment-deadline expiries mean 180s is not comfortably above the real worst case for
   every group. It did not cause a restart, but the margin is thinner than the diagnosis doc's
