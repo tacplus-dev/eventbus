@@ -162,6 +162,61 @@ class AdminCallerScopingTest {
         assertFalse(SubscribeHandler.ownsConsumerGroup(VICTIM_SUB, VICTIM_SUB + "-shadow|" + GROUP));
     }
 
+    // ---- getConsumerGroupLag ----
+    //
+    // ListConsumerGroups scoping stops enumeration, not a targeted guess: lag
+    // answered for any group id a caller could name, handing back that group's
+    // members, assigned topics and offsets.
+
+    @Test
+    void getConsumerGroupLag_onAnotherServicesBoundGroup_isDenied() {
+        ProtoException e = assertThrows(ProtoException.class,
+                () -> admin().getConsumerGroupLag(caller(ATTACKER_SUB), groupRequest(VICTIM_BOUND_GROUP)));
+        assertEquals(ProtoException.PERMISSION_DENIED, e.getCode(), e.getMessage());
+    }
+
+    @Test
+    void getConsumerGroupLag_forAnUnverifiedCallerOrEmptyGroup_isDenied() {
+        ProtoException e = assertThrows(ProtoException.class,
+                () -> admin().getConsumerGroupLag(null, groupRequest(VICTIM_BOUND_GROUP)));
+        assertEquals(ProtoException.PERMISSION_DENIED, e.getCode(), e.getMessage());
+
+        ProtoException b = assertThrows(ProtoException.class,
+                () -> admin().getConsumerGroupLag(caller(ATTACKER_SUB), groupRequest("")));
+        assertEquals(ProtoException.PERMISSION_DENIED, b.getCode(), b.getMessage());
+    }
+
+    @Test
+    void getConsumerGroupLag_onTheOwnersOwnGroup_stillGetsThrough() {
+        // The positive half, for the same reason theOwnersOwnGroupStillGetsThrough
+        // exists: a gate that denied everything would still pass the assertions
+        // above. Both spellings the owner can use.
+        for (String named : new String[]{GROUP, VICTIM_BOUND_GROUP}) {
+            ProtoException e = assertThrows(ProtoException.class,
+                    () -> admin().getConsumerGroupLag(caller(VICTIM_SUB), groupRequest(named)));
+            assertEquals(ProtoException.UNAVAILABLE, e.getCode(),
+                    "owner naming \"" + named + "\" should clear the caller check and reach Kafka");
+        }
+    }
+
+    // ---- updateTopicConfig ----
+
+    @Test
+    void updateTopicConfig_isDeniedToEveryCaller() {
+        // Retention shrinkage is DeleteTopic's data loss in slow motion, and
+        // topic ownership is not derivable from the registry, so this is denied
+        // outright rather than scoped. No caller in the fleet invokes it.
+        Eventbus.UpdateTopicConfigRequest request = Eventbus.UpdateTopicConfigRequest.newBuilder()
+                .setTopic("services.messaging.messaging.MessageBus.Stream")
+                .setRetentionMs(1000)
+                .build();
+        for (String sub : new String[]{VICTIM_SUB, ATTACKER_SUB}) {
+            ProtoException e = assertThrows(ProtoException.class,
+                    () -> admin().updateTopicConfig(caller(sub), request));
+            assertEquals(ProtoException.PERMISSION_DENIED, e.getCode(), e.getMessage());
+        }
+    }
+
     // ---- deleteTopic ----
 
     @Test

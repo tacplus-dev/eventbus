@@ -530,16 +530,37 @@ public class EventBusHandler implements Handler {
 			public Eventbus.TopicInfo updateTopicConfig(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.UpdateTopicConfigRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
-				checkReady();
-				try { return toProto(topicManager.alterTopicConfig(request.getTopic(), request.getRetentionMs(), request.getPartitionCount())); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				// Same treatment as DeleteTopic, for the same reason: Admin is
+				// auth_services: ["*"], so any registered platform service could
+				// shrink another service's topic retention -- DeleteTopic's data
+				// loss in slow motion -- or repartition it underneath its
+				// consumers. Scoping it to caller-owned topics is not available:
+				// nothing in the registry says which service owns a topic (a
+				// topic carries a declaring package and an auth_services
+				// entitlement list, and auth_services is explicitly an identity
+				// grant, not a namespace), and inventing an ownership scheme
+				// here would be a second, disagreeing answer to a question the
+				// platform does not otherwise ask. No caller in the fleet
+				// invokes UpdateTopicConfig today, so the narrowest policy that
+				// loses nothing is the empty one, enforced here until the proto
+				// says it. See decisions/2026-09-13-admin-rpc-caller-scoping.md.
+				throw ProtoException.newErrPermissionDenied(null,
+						"UpdateTopicConfig is not entitled to any caller; topic retention and "
+						+ "partitioning come from eventbus's own default_retention_hours / "
+						+ "default_partitions config, not from a per-caller RPC");
 			}
 			@Override
 			public Eventbus.ConsumerGroupInfo getConsumerGroupLag(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ConsumerGroupRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
+				// Before checkReady(): a caller that owns nothing here learns
+				// nothing about the broker's state either. Lag answers for an
+				// arbitrary group id leaked per-group state (members, assigned
+				// topics, offsets) to any caller that could guess a group id,
+				// which is what ListConsumerGroups' scoping alone does not stop.
+				String groupId = adminOwnedGroup(caller, request.getGroupId());
 				checkReady();
-				try { return toProto(topicManager.getConsumerGroupLag(request.getGroupId())); }
+				try { return toProto(topicManager.getConsumerGroupLag(groupId)); }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override

@@ -214,3 +214,146 @@ topics and no `DelegationProbeBus`) — and restored afterwards. No source file 
 `just generate` regenerates that artifact. **The numbers above therefore come from a tree whose
 generated bindings cover the same eight topics as the last good build.** The `DelegationProbeBus`
 breakage is still there and still blocks CI.
+
+---
+
+## 9. Follow-up, same day: the two siblings §7 left alone
+
+**Date:** 2026-09-13 (same day, immediately after the above)
+**Status:** CODE CHANGED, TESTED LOCALLY — not deployed, not committed.
+**Touches:** `server/.../EventBusHandler.java` (two call sites in `getAdminGrpcImpl()`),
+`server/.../AdminCallerScopingTest.java` (four tests added).
+
+§7 named `UpdateTopicConfig` and `GetConsumerGroupLag` as the next thing to fix, against the same
+gate. Both are now fixed. No new mechanism: `GetConsumerGroupLag` calls the `adminOwnedGroup`
+helper §3 already added, and `UpdateTopicConfig` gets `DeleteTopic`'s blanket denial. Nothing in
+`SubscribeHandler` changed.
+
+### 9.1 `GetConsumerGroupLag` — scoped, exactly like the other two group RPCs
+
+```java
+String groupId = adminOwnedGroup(caller, request.getGroupId());
+checkReady();
+try { return toProto(topicManager.getConsumerGroupLag(groupId)); }
+```
+
+Before `checkReady()`, for the reason §3 gives for the other two: a caller that owns nothing here
+learns nothing about the broker's state either. §4's `ListConsumerGroups` scoping stops
+*enumeration*; it did nothing about a targeted guess, and lag hands back a group's members,
+assigned topics and per-partition offsets — enough to see when another service's consumer is
+falling behind, or whether it is running at all.
+
+The three-way behaviour is the same one `DeleteConsumerGroup` and `ResetConsumerGroupOffsets` have:
+
+| caller names | before | now |
+|---|---|---|
+| a plain group name (`"stratum"`) | that literal Kafka group | rebound to `callerSub\|stratum` — its own |
+| its own bound id | allowed | allowed |
+| another subject's bound id | allowed | PERMISSION_DENIED |
+
+Worth stating because it bounds the blast radius: **the plain-name form is never denied**, it is
+rebound. Only an explicitly bound cross-caller id is refused.
+
+### 9.2 The one caller in the fleet, and why it is unaffected
+
+`scripts/e2e.sh` (schematic root, outside this repo) is the only caller of `GetConsumerGroupLag`
+anywhere in the tree — `broker_group_topics` / `broker_group_state`, minting an **argus** service
+token and asking about `stratum`, `graphdb`, `timedb`. Those are cross-service questions, so this
+looked at first like a caller the fix would break.
+
+It is not, for two independent reasons:
+
+1. They pass **plain** group names, which are rebound rather than denied (§9.1) — no
+   PERMISSION_DENIED reaches the script.
+2. Those plain names never named a real group in the first place. Every group a subscribe creates
+   is in bound form (`boundConsumerGroup`, always, since there is no unbound path), so
+   `getConsumerGroupLag("stratum")` was already answering for a group id that exists for nobody.
+   Pre-fix it returned a Dead/Empty group; post-fix it returns a Dead/Empty group under a
+   different id. Same answer, same gate outcome.
+
+So that gate in `e2e.sh` is *already* vacuous in a way §9 does not cause and does not fix. It is
+worth a separate look by whoever owns `scripts/e2e.sh` — the right query is the bound id, which
+`ListConsumerGroups` now only reports to the group's own owner, so an honest cross-service
+subscription oracle needs an operator identity in the proto (§6), not this RPC as it stands. Not
+changed here: `scripts/e2e.sh` is outside this repo's write scope.
+
+### 9.3 `UpdateTopicConfig` — denied outright, like `DeleteTopic`
+
+Checked whether scoping to caller-owned topics was possible before defaulting to denial, because
+scoping is the better answer where it is available. It is not available:
+
+- Nothing in the registry says which service **owns** a topic. `TopicDiscovery.TopicField` carries
+  a state name, a declaring package, a package path and a per-rpc `auth_services` map — and
+  `auth_services` is explicitly *"an identity grant, not a namespace"* (`spec.proto:839`, quoted in
+  §2). It is an entitlement list, routinely `["*"]` (agentsensor's `PublishTo*`), so it cannot
+  stand in for ownership.
+- The topic name's leading segment (`services.mailbox.…`, `vservices.agent-sensor.…`) is a proto
+  package path, not a verified service identity. Mapping a SPIFFE subject onto it would be a new
+  ownership scheme that exists nowhere else in the platform — precisely the invention this repo
+  should not make unilaterally.
+
+So `UpdateTopicConfig` takes `DeleteTopic`'s treatment, with `DeleteTopic`'s justification:
+
+- The damage is the same kind. Shrinking `retention.ms` on another service's topic discards its
+  backlog on the next log-retention sweep — `DeleteTopic`'s data loss in slow motion — and raising
+  `partition_count` reshuffles key→partition assignment underneath live consumers, breaking
+  per-key ordering permanently (Kafka cannot undo it; partition counts only go up).
+- **No caller invokes it.** `UpdateTopicConfig` appears in exactly five places tree-wide:
+  `platform/proto/services/eventbus.proto` (the declaration), this handler, the two dead copies §7
+  lists, `EVENTBUS_PROGRESS.md`, and `operator/pkg/bootstrap/registry.json` (a generated artifact).
+  No client, script, or service calls it.
+- The legitimate path already exists and is not this RPC. Topics are created by
+  `TopicManager.ensureTopicExists` from eventbus's own `default_retention_hours` /
+  `default_partitions` config, which is kernel-managed service config. Retention is an eventbus
+  deployment decision, not a per-caller one.
+
+The denial message says that, so a caller that does appear later gets told where to go rather than
+just "no".
+
+### 9.4 The proto follow-up is unchanged
+
+§6 still stands and now covers three RPCs, not two. `UpdateTopicConfig` joins `DeleteTopic` in
+wanting `option (spec.rpc) = {auth_services: []}`; `GetConsumerGroupLag` stays `["*"]` at the proto
+level and scoped in the handler, like the other group RPCs, since the boundary it needs is
+ownership, which the proto cannot express. A reader of `eventbus.proto` alone still concludes,
+wrongly, that any service may reconfigure any topic.
+
+### 9.5 Verification
+
+Same environment and the same pre-existing blocker as §8 — `generate-eventbus-rpcs` still fails on
+`tasks.DelegationProbeBusStateService`, still not fixed here, still worked around the same way (the
+`eventbus` routing label removed from the `DelegationProbeBus` boundary in the **build artifact**
+`model/target/generated-sources/model/registry.json` for the run only, and restored afterwards; no
+source file touched for it). One new wrinkle: that artifact gets regenerated by any run that builds
+the `model` module, so the model and codegen modules were installed to the local repo first and the
+server module run on its own.
+
+Full suite, fix in place:
+
+```
+[INFO] Tests run: 83, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+[INFO] Total time:  04:17 min
+```
+
+83 server tests, up from §8's 79 — the four added here, nothing else changed. Every real-broker
+suite §8 lists is in that number and green.
+
+### The new tests fail without the fix
+
+Verified, not assumed. With both call sites reverted to their pre-fix bodies and nothing else
+changed, `-Dtest=AdminCallerScopingTest`:
+
+```
+[ERROR] Tests run: 13, Failures: 3, Errors: 0, Skipped: 0
+[ERROR]   getConsumerGroupLag_onAnotherServicesBoundGroup_isDenied:175       expected: <7> but was: <14>
+[ERROR]   getConsumerGroupLag_forAnUnverifiedCallerOrEmptyGroup_isDenied:182 expected: <7> but was: <14>
+[ERROR]   updateTopicConfig_isDeniedToEveryCaller:216                        expected: <7> but was: <14>
+```
+
+7 is PERMISSION_DENIED, 14 is UNAVAILABLE — pre-fix, the attacker's lag query and the retention
+shrink both cleared every check and reached the Kafka client. `getConsumerGroupLag_onTheOwnersOwnGroup_stillGetsThrough`
+passes in **both** runs, which is the point of it: it is UNAVAILABLE either way, so it is the test
+that would catch a gate that started denying everything, and it cannot manufacture a false pass for
+the three above. Restoring the handler (verified byte-identical to the run above) returns the suite
+to 13/13.
