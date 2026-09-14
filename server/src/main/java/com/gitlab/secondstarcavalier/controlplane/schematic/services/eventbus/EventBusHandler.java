@@ -453,6 +453,34 @@ public class EventBusHandler implements Handler {
 		// Admin has no runtime config; nothing to do.
 	}
 
+	/**
+	 * Resolves the Kafka consumer group an Admin RPC may act on, or throws
+	 * PERMISSION_DENIED when the caller does not own the group it named.
+	 *
+	 * Admin is declared {@code auth_services: ["*"]} in the proto, so the
+	 * Authorizer lets every registered platform service through and the only
+	 * place a per-caller boundary can be drawn is here. The scheme is not a new
+	 * one: it is {@link SubscribeHandler#boundConsumerGroup}'s
+	 * {@code callerSub|group} binding, read back through
+	 * {@link SubscribeHandler#ownedConsumerGroup} -- the same isolation the
+	 * subscribe path has always enforced, which Admin previously routed around.
+	 *
+	 * See {@code decisions/2026-09-13-admin-rpc-caller-scoping.md}.
+	 */
+	static String adminOwnedGroup(
+			com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
+			String requested) throws ProtoException {
+		String callerSub = caller == null ? "" : caller.getSubject();
+		String groupId = SubscribeHandler.ownedConsumerGroup(callerSub, requested);
+		if (groupId.isEmpty()) {
+			// Deliberately does not say whether the group exists: a caller that
+			// does not own it learns nothing about it either way.
+			throw ProtoException.newErrPermissionDenied(null,
+					"consumer group \"%s\" is not owned by the calling service", requested);
+		}
+		return groupId;
+	}
+
 	@Override
 	public com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler getAdminGrpcImpl() {
 		return new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler() {
@@ -486,9 +514,17 @@ public class EventBusHandler implements Handler {
 			public void deleteTopic(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.DeleteTopicRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
-				checkReady();
-				try { topicManager.deleteTopic(request.getTopic()); }
-				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				// Topic deletion is entitled to nobody. Admin is declared
+				// auth_services: ["*"], which let any registered platform service
+				// delete any topic, including another service's; tacplus can
+				// express a narrower policy per RPC ((spec.rpc).auth_services),
+				// but that list lives in the proto repo, not here. No caller in
+				// the fleet invokes DeleteTopic today, so the narrowest list that
+				// loses nothing is the empty one, enforced here until the proto
+				// says it. See decisions/2026-09-13-admin-rpc-caller-scoping.md.
+				throw ProtoException.newErrPermissionDenied(null,
+						"DeleteTopic is not entitled to any caller; topics are created from their "
+						+ "(spec.topic) declaration and removed by changing that declaration");
 			}
 			@Override
 			public Eventbus.TopicInfo updateTopicConfig(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
@@ -512,9 +548,16 @@ public class EventBusHandler implements Handler {
 					Eventbus.ListConsumerGroupsRequest request, CollectionRuntime.PageParams page)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
+				// Scoped to the caller's own groups. A fleet-wide list has no
+				// caller today and would disclose every service's SPIFFE subject
+				// (group ids carry it) to anything holding an eventbus token.
+				String callerSub = caller == null ? "" : caller.getSubject();
 				try {
 					List<Eventbus.ConsumerGroupInfo> groups = new ArrayList<>();
-					for (TopicManager.ConsumerGroupInfo info : topicManager.listConsumerGroups()) groups.add(toProto(info));
+					for (TopicManager.ConsumerGroupInfo info : topicManager.listConsumerGroups()) {
+						if (!SubscribeHandler.ownsConsumerGroup(callerSub, info.groupId())) continue;
+						groups.add(toProto(info));
+					}
 					groups.sort(java.util.Comparator.comparing(Eventbus.ConsumerGroupInfo::getGroupId));
 					return pageByStringKey(groups, page, Eventbus.ConsumerGroupInfo::getGroupId);
 				} catch (ProtoException e) { throw e;
@@ -524,6 +567,9 @@ public class EventBusHandler implements Handler {
 			public void resetConsumerGroupOffsets(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ResetConsumerGroupOffsetsRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
+				// Before checkReady(): a caller that owns nothing here learns
+				// nothing about the broker's state either.
+				String groupId = adminOwnedGroup(caller, request.getGroupId());
 				checkReady();
 				try {
 					KafkaSubscriber.SeekMode mode;
@@ -535,7 +581,7 @@ public class EventBusHandler implements Handler {
 						case TO_EARLIEST -> mode = KafkaSubscriber.SeekMode.EARLIEST;
 						default -> throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INVALID_ARGUMENT, "reset_to is required");
 					}
-					topicManager.resetConsumerGroupOffsets(request.getGroupId(), request.getTopic(), mode, value);
+					topicManager.resetConsumerGroupOffsets(groupId, request.getTopic(), mode, value);
 				} catch (com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException pe) { throw pe; }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
@@ -543,8 +589,11 @@ public class EventBusHandler implements Handler {
 			public void deleteConsumerGroup(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
 					Eventbus.ConsumerGroupRequest request)
 					throws com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
+				// Before checkReady(): a caller that owns nothing here learns
+				// nothing about the broker's state either.
+				String groupId = adminOwnedGroup(caller, request.getGroupId());
 				checkReady();
-				try { topicManager.deleteConsumerGroup(request.getGroupId()); }
+				try { topicManager.deleteConsumerGroup(groupId); }
 				catch (Exception e) { throw new com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
 			}
 			@Override

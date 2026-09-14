@@ -367,6 +367,48 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		return callerSub + "|" + requested;
 	}
 
+	/**
+	 * The inverse of {@link #boundConsumerGroup}: whether a Kafka group id is
+	 * one this caller's own subscribes produced.
+	 *
+	 * A group with no '|' at all is an anonymous subscribe's random id or an
+	 * eventbus-internal group, which belongs to no caller and so is owned by
+	 * nobody. The separator cannot appear in a SPIFFE URI, so a prefix match on
+	 * {@code callerSub + "|"} cannot be satisfied by another caller's subject.
+	 */
+	public static boolean ownsConsumerGroup(String callerSub, String groupId) {
+		if (callerSub == null || callerSub.isEmpty() || groupId == null) {
+			return false;
+		}
+		return groupId.startsWith(callerSub + "|");
+	}
+
+	/**
+	 * Resolves the Kafka group id an admin RPC from this caller may act on, or
+	 * "" when the caller may not act on the requested group at all.
+	 *
+	 * Admin callers name a group the same way subscribers do -- with the
+	 * unbound name they passed to Subscribe -- so the requested name is bound
+	 * through {@link #boundConsumerGroup} exactly as the subscribe path binds
+	 * it. An already-bound id (as {@code ListConsumerGroups} reports it) is
+	 * accepted as-is when it is the caller's own. Anything else -- no verified
+	 * caller, an empty name, or an id already bound to some other subject --
+	 * names a group this caller does not own, and resolves to "".
+	 */
+	public static String ownedConsumerGroup(String callerSub, String requested) {
+		if (callerSub == null || callerSub.isEmpty() || requested == null || requested.isEmpty()) {
+			return "";
+		}
+		if (ownsConsumerGroup(callerSub, requested)) {
+			return requested;
+		}
+		if (requested.indexOf('|') >= 0) {
+			// Already bound, but not to this caller.
+			return "";
+		}
+		return boundConsumerGroup(callerSub, requested);
+	}
+
 	private static SeekParams toSeekParams(Eventbus.SubscribeRequest request, String callerSub) {
 		SeekMode mode = SeekMode.LATEST;
 		long value = 0;

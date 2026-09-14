@@ -1,0 +1,43 @@
+Audit complete. All 23 server files and 10 codegen files were read directly, and every finding below was checked against the generated bindings, the tacplus `Auth`/`Authorizer` code, the eventbus proto, the existing tests, and the Kafka 3.9 jar where the claim depended on Kafka behaviour.
+
+## Security
+
+**1. Tenant callers can publish into any other tenant's namespace.** `server/src/main/java/.../grpc/PublishHandler.java:338-366`. A row that arrives with `namespace` already set is accepted verbatim with no check against the caller's namespace claim. The read side pins a `/tenants/<t>` caller to its own tenant (`SubscribeHandler.java:163-165`), but the write side does not. Failure: a tenant-owned service instance holding a `/tenants/acme` token publishes an `AgentEvent` (publish policy is `*`) with `namespace=/tenants/victim`; stratum ingests it into the victim's store. `FleetRecordNamespaceStampTest.java:142-184` explicitly encodes this as intended, from a `/local/acme` caller into `/local/someone-elses-tenant`, so this is a design decision, but it contradicts the subscribe-side isolation and should be reviewed.
+
+**2. Any service can delete or reset any other caller's consumer group or topic.** `EventBusHandler.java:397-505` (the live admin handler) ignores the `Caller` entirely, and the Admin service policy is `auth_services: ["*"]` (`eventbus.proto:259`). Failure: `SubscribeHandler.boundConsumerGroup` (line 363) exists so no caller can join stratum's group, yet any service token can call `deleteConsumerGroup` or `resetConsumerGroupOffsets` on `spiffe://…/stratum|ingest` and force stratum to replay or skip events, or `deleteTopic` on the mailbox topic. `listConsumerGroups` also discloses every caller's SPIFFE sub.
+
+## Correctness
+
+**3. Any exception in the subscribe loop ends the stream with OK and zero records.** `KafkaSubscriber.java:391-393` catches `Exception`, logs it, and returns; `SubscribeHandler.java:280-285` then calls `onCompleted`. Failure: send `offset=-1`. The proto's `assert_ge` is never applied because the typed bindings are hand-built descriptors (`TypedRpcGenerator.java:118-138`), so `consumer.seek` throws `IllegalArgumentException` and the client sees a clean empty stream. Same for a nonexistent partition id, a non-rebalance commit failure (line 625), or a seek on an unowned partition.
+
+**4. Peer discovery puts broker-only nodes, and self, into the KRaft voter list regardless of role.** `EventBusHandler.java:1014-1028` adds every registered node plus self; `EventbusNode.role` is stored but never consulted. Failure: a `KAFKA_ROLE_BROKER` node fails startup because Kafka 3.9 `KafkaConfig` rejects a broker-only node id in `controller.quorum.voters` (message "must not be included in the set of voters", confirmed in the jar). Controllers in a 1-controller, 2-broker topology see three voters, only one real, so the quorum never forms. `validateTopology` explicitly supports these roles.
+
+**5. WatchTrace dispatch is broken with more than one broker instance.** `EventBusHandler.java:191-207` consumes the trace topic with the fixed group `eventbus-trace-dispatch`, and `WatchTraceHandler.traceStreams` is per-JVM. Failure: with `broker_count > 1` the group's partitions split across instances, so a trace event consumed on instance B for a watcher attached to A is silently dropped. `dispatchTrace` (line 289) is likewise local-only.
+
+**6. Consumer-group offsets are committed but never used to resume.** `KafkaSubscriber.java:459` and `483` always run `applySeek`, and an unset `start_from` maps to `LATEST` (`SubscribeHandler.java:371-393`), so the committed position (line 619) is overridden on every session. Failure: a stratum subscriber with a bound group disconnects for a minute and reconnects; every event published in between is skipped. Related: the `break` at lines 556 and 579 exits the batch early and line 619 still commits past the undelivered remainder.
+
+**7. PublishHandler keeps publishing after it has failed the stream.** `PublishHandler.java:284-297` and `353-364` set `terminated` and return, but there is no guard at the top of `onNext`, unlike `SubscribeHandler.java:173`. Failure: the client has M1..M5 in flight when M3 fails validation; M4 and M5 are still written to Kafka with no ack, and the client's retry of the batch produces duplicates.
+
+**8. A trace_id sticks to the stream for its whole lifetime.** `PublishHandler.java:304-306` adds `trace_id` to the shared `callerHeaders` map and never removes it. Failure: one traced message followed by a thousand untraced ones stamps all thousand with the stale trace id. The trace dispatcher (line 308) also fires before the namespace refusal at line 353.
+
+**9. Publish acks cannot be correlated to requests, and one stream's events are spread across partitions.** `KafkaPublisher.java:63` sends with a null key, default partitions is 6, and `PublishHandler.java:387-402` writes `PublishResponse` in Kafka completion order with no correlation field (`eventbus.proto:93-98`). Failure: acks for records on different partitions complete out of order, so a client pairing the Nth response with the Nth request records the wrong offset. Successive updates for one entity (for example `AgentSessionState`) can also be consumed out of order.
+
+**10. Anonymous subscribes leave a persistent consumer group behind each.** `KafkaSubscriber.java:642-644` assigns a random UUID group and line 619 commits offsets into it. Failure: every UI or ad hoc subscribe stream writes group metadata and offsets that survive for `offsets.retention.minutes`, which is the exact `__consumer_offsets` and metadata-log churn `KafkaEmbeddedBroker.java:313-335` is tuning against.
+
+**11. createSession blocks the gRPC thread and leaks the consumer on failure.** `KafkaSubscriber.java:673-687` runs a 5 s `poll` on the calling gRPC executor thread, discards whatever it returns, and if that poll throws, the `KafkaConsumer` is never closed. `SubscribeHandler.onNext` then propagates the exception as UNKNOWN.
+
+**12. Normal client cancellation is logged and counted as a session failure.** `SubscribeHandler` never sets an `onCancelHandler`, so after cancel `responseObserver.onNext` throws `StatusRuntimeException`, which escapes the `InvalidProtocolBufferException` catch at line 258, lands in `KafkaSubscriber.java:391` as `sessionsFailed`, and the `finally` at line 281 then calls `onCompleted` on a cancelled call, throwing again inside the virtual thread.
+
+## Anti-patterns and drift
+
+**13. Three copies of the admin logic, two of them dead.** `grpc/EventBusServiceImpl.java` is referenced nowhere. `EventBusHandler.EventBusServiceHandlerImpl` (lines 727-930) is instantiated at line 187 into `handlerImpl`, which nothing reads. Only the anonymous `getAdminGrpcImpl` (line 397) is registered. `noOpObserver` and `NO_OP` at lines 303-311 are also unused. The copies already diverge in error mapping.
+
+**14. Unsynchronized shared state on the publish path.** `TopicManager.java:30` `knownTopics` is a plain `HashSet` read and mutated from every `PublishHandler` constructor (line 230) on concurrent gRPC threads. The constructor also performs a blocking admin round trip per new stream and, if it throws, the stream fails UNKNOWN rather than UNAVAILABLE.
+
+**15. Tenant and trace semantics keyed on names rather than annotations.** `TopicDiscovery.java:462-484` treats any `string namespace` field as the `(spec.store_namespace)` boundary, and `TypedRpcGenerator.java:347` detects the trace type by `endsWith("TraceEvent")`. Failure: a record with an unrelated `namespace` string is tenant-filtered and stamped by it; a type named `FooTraceEvent` silently loses trace dispatch.
+
+**16. The bigdata discovery path cannot produce a buildable result.** `TopicDiscovery.java:554-570` builds a `TopicField` with an empty state name and never computes the actor or namespace flags, so its service name has no `auth_services` entry and `collectMethodAuth` (`TypedRpcGenerator.java:288-292`) throws. Either dead code or a build break waiting for the first `bigdata_name` annotation.
+
+**17. TLS renewal failures are swallowed.** `KafkaEmbeddedBroker.java:198-222` logs and continues, updates only the keystore, and `checkHealth` does not cover it. Failure: a failed renewal leaves the old cert in place until expiry, at which point inter-node mTLS breaks with no prior signal.
+
+Minor, noted without a full write-up: `initStarted` and `broker` in `EventBusHandler.java:320-328` are check-then-set and non-volatile across the SM and init threads, and the `WatchTraceHandler` javadoc claims `auth_disabled` while the proto declares no such option.
