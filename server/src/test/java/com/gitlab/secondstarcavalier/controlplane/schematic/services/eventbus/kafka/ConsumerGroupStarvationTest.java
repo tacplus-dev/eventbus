@@ -195,6 +195,69 @@ class ConsumerGroupStarvationTest {
         session.close();
     }
 
+    /**
+     * Mode 3: the poll loop itself is the thread that is stuck.
+     *
+     * This is the 2026-09-15 incident. Every stratum consumer group went Empty
+     * on heartbeat expiration and stayed Empty for 25 hours while the gRPC
+     * SubscribeToStream streams stayed open on both sides — so stratum's
+     * reconnect loop never fired and nothing anywhere reported a problem.
+     *
+     * The thing that made it silent is that the poll loop was the stuck thread.
+     * Any recovery that runs ON that thread — noticing a flag, catching a
+     * WakeupException — cannot happen, because the thread is what is blocked.
+     * So the stall watchdog must terminate the stream from its own thread, and
+     * that is what this asserts: a handler that never returns still gets the
+     * session failed, with the loop still parked inside it.
+     */
+    @Test
+    @Order(3)
+    void aStalledPollLoopFailsItsStreamFromTheWatchdogThread() throws Exception {
+        String group = "test.starvation.group3";
+        KafkaSubscriber subscriber = new KafkaSubscriber(bootstrapAddress);
+
+        publishBatch("stalled", 4);
+
+        CountDownLatch dispatched = new CountDownLatch(1);
+        CompletableFuture<String> failedStream = new CompletableFuture<>();
+        KafkaSubscriber.SeekParams stalledParams = params(group, false);
+        KafkaSubscriber.Session session = subscriber.createSession(TOPIC, stalledParams);
+        // Stands in for SubscribeHandler's stream termination.
+        session.onStalled(failedStream::complete);
+
+        Thread loop = new Thread(() -> {
+            try {
+                session.run(stalledParams, record -> {
+                    dispatched.countDown();
+                    try {
+                        Thread.sleep(Long.MAX_VALUE);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return false;
+                });
+            } catch (RuntimeException expected) {
+                // ConsumerStalledException once the loop is released at the end.
+            }
+        }, "stalled-session");
+        loop.setDaemon(true);
+        loop.start();
+
+        assertTrue(dispatched.await(60, TimeUnit.SECONDS),
+                "the handler should be dispatched a record before it blocks");
+
+        // POLL_STALL_WARN_MS is 60s and the watchdog scans every 30s, so the
+        // report lands between 60s and 90s after that last poll.
+        String reason = failedStream.get(150, TimeUnit.SECONDS);
+        assertTrue(reason.contains(TOPIC), "stall reason should name the topic: " + reason);
+        assertTrue(subscriber.getPollStallsDetected() >= 1, "the stall must be counted");
+        assertTrue(loop.isAlive(),
+                "the point of the test: the stream was failed while the poll loop is still stuck");
+
+        loop.interrupt();
+        session.close();
+    }
+
     private static boolean awaitCondition(BooleanSupplierEx condition, long timeoutMs)
             throws Exception {
         long deadline = System.nanoTime() + timeoutMs * 1_000_000L;

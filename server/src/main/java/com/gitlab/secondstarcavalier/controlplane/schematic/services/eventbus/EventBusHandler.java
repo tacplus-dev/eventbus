@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.security.PrivateKey;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -313,9 +315,55 @@ public class EventBusHandler implements Handler {
 		}
 		try {
 			topicManager.getClusterHealth();
-			return recordProbe(true, null);
 		} catch (Exception e) {
 			return recordProbe(false, e.getMessage());
+		}
+		String starved = starvedConsumerGroups();
+		if (starved != null) {
+			return recordProbe(false, starved);
+		}
+		return recordProbe(true, null);
+	}
+
+	/**
+	 * Consumption liveness, as opposed to the process liveness above: a
+	 * description of the consumer groups eventbus holds an assigned subscribe
+	 * session for and which the coordinator reports as having no members, or
+	 * null when there are none.
+	 *
+	 * A broker that answers describeCluster() is not the same thing as a broker
+	 * whose consumers are consuming. The failure this exists for leaves the pod
+	 * 1/1 Ready, every stream open, the logs clean and nothing delivered — the
+	 * only place it shows is here, in the gap between what eventbus believes it
+	 * is consuming and what the coordinator says is joined.
+	 *
+	 * The session gate is what makes this safe to fail the probe on. An Empty
+	 * group with growing lag and nobody subscribed is entirely normal — a
+	 * subscriber that scaled down or went away — and restarting eventbus for it
+	 * would be wrong. A group eventbus is holding assigned partitions in is
+	 * eventbus's own to answer for.
+	 *
+	 * It folds into recordProbe's existing streak rather than adding a second
+	 * verdict: a rebalance shows zero members briefly, so this has to persist
+	 * for the same ~240s as a wedged broker before it restarts anything.
+	 */
+	private String starvedConsumerGroups() {
+		Set<String> assigned = KafkaSubscriber.assignedConsumerGroups();
+		if (assigned.isEmpty()) {
+			return null;
+		}
+		try {
+			Map<String, Long> starved = topicManager.groupsWithNoMembers(assigned);
+			if (starved.isEmpty()) {
+				return null;
+			}
+			return "consumer group(s) with an assigned eventbus subscribe session but no members "
+					+ "(group=total_lag): " + starved;
+		} catch (Exception e) {
+			// Could not tell. The cluster probe above already passed, so report
+			// nothing rather than count a probe failure we cannot attribute.
+			logger.warn("Consumer group membership probe failed: {}", e.getMessage());
+			return null;
 		}
 	}
 

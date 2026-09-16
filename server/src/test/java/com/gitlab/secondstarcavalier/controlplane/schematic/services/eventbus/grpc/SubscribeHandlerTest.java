@@ -3,7 +3,9 @@ package com.gitlab.secondstarcavalier.controlplane.schematic.services.eventbus.g
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.Map;
@@ -18,6 +20,36 @@ import com.google.protobuf.Timestamp;
 import com.google.protobuf.WireFormat;
 
 class SubscribeHandlerTest {
+
+	/**
+	 * The regression test for the 2026-09-15 incident: every stratum consumer
+	 * group in the dev cluster went Empty on heartbeat expiration ~30s after
+	 * every join, for 25 hours, with all the gRPC streams still open.
+	 *
+	 * The cause was this executor being
+	 * {@code Executors.newVirtualThreadPerTaskExecutor()}. A Kafka consumer poll
+	 * loop blocks inside the classic consumer's {@code synchronized} coordinator
+	 * methods, which pins the carrier; a pinned virtual thread that then waits
+	 * on a lock parks ON its carrier instead of unmounting, so it holds it for
+	 * the whole wait. With one carrier per CPU (2 on the fleet's nodes) the
+	 * scheduler ran out and sessions submitted here stopped being run at all —
+	 * they never polled, never heartbeat, and were evicted one
+	 * session.timeout.ms after their group stabilized.
+	 *
+	 * Nothing at the call site changes when the executor changes, so this is
+	 * the only thing that would notice it going back.
+	 */
+	@Test
+	void subscribeSessionsRunOnPlatformThreadsNotVirtualThreads() throws Exception {
+		java.util.concurrent.CompletableFuture<Thread> ran = new java.util.concurrent.CompletableFuture<>();
+		SubscribeHandler.SUBSCRIBE_EXECUTOR.submit(() -> ran.complete(Thread.currentThread()));
+		Thread t = ran.get(10, java.util.concurrent.TimeUnit.SECONDS);
+
+		assertFalse(t.isVirtual(),
+				"Kafka poll loops must not run on virtual threads: they block inside the "
+						+ "consumer's synchronized coordinator methods, which pins the carrier");
+		assertTrue(t.isDaemon(), "subscribe threads must not hold the JVM open");
+	}
 
 	@Test
 	void subscribeRecordForWrapsPayloadWithNonZeroMetadata() throws Exception {

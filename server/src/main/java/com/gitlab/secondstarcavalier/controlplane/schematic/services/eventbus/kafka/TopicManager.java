@@ -234,6 +234,66 @@ public class TopicManager implements AutoCloseable {
     }
 
     /**
+     * Of the given groups, the ones the coordinator reports as having no
+     * members, with each one's total lag.
+     *
+     * Deliberately narrower than {@link #listConsumerGroups}: this runs on the
+     * health-reporter thread every 10s, so it describes only the handful of
+     * groups eventbus itself is subscribed to and does not fetch per-partition
+     * offsets for every group in the cluster. The 5s deadline is half the
+     * cluster probe's, because it is the third admin round trip that probe can
+     * make and the health cadence is 10s.
+     */
+    public Map<String, Long> groupsWithNoMembers(Collection<String> groupIds) {
+        if (groupIds.isEmpty()) return Map.of();
+        try {
+            Map<String, ConsumerGroupDescription> described =
+                    admin.describeConsumerGroups(groupIds).all().get(5, TimeUnit.SECONDS);
+            Map<String, Long> starved = new LinkedHashMap<>();
+            for (Map.Entry<String, ConsumerGroupDescription> entry : described.entrySet()) {
+                if (entry.getValue().members().isEmpty()) {
+                    starved.put(entry.getKey(), totalLag(entry.getKey()));
+                }
+            }
+            return starved;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted describing consumer groups", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Failed to describe consumer groups", e);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("Consumer group membership probe timed out", e);
+        }
+    }
+
+    /**
+     * Total lag across a group's committed partitions, or -1 when it cannot be
+     * read. Only used to put a number in the log line that reports a starved
+     * group — the membership check above is what decides.
+     */
+    private long totalLag(String groupId) {
+        try {
+            Map<TopicPartition, OffsetAndMetadata> committed =
+                    admin.listConsumerGroupOffsets(groupId)
+                            .partitionsToOffsetAndMetadata().get(5, TimeUnit.SECONDS);
+            if (committed.isEmpty()) return 0;
+            Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> endOffsets =
+                    admin.listOffsets(committed.keySet().stream().collect(Collectors.toMap(
+                            tp -> tp, tp -> OffsetSpec.latest()))).all().get(5, TimeUnit.SECONDS);
+            long total = 0;
+            for (Map.Entry<TopicPartition, OffsetAndMetadata> entry : committed.entrySet()) {
+                total += Math.max(0, endOffsets.get(entry.getKey()).offset() - entry.getValue().offset());
+            }
+            return total;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /**
      * Lists all consumer groups with their lag info.
      */
     public List<ConsumerGroupInfo> listConsumerGroups() {

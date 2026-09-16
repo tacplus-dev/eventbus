@@ -31,7 +31,7 @@ import java.util.function.Function;
  * and streams back metadata-bearing typed protobuf records from Kafka.
  *
  * The first SubscribeRequest creates a KafkaSubscriber.Session on a
- * virtual thread. Subsequent requests call session.resubscribe().
+ * dedicated platform thread. Subsequent requests call session.resubscribe().
  *
  * The client-supplied consumer_group is namespaced under the caller's own
  * verified identity before it reaches Kafka -- see
@@ -113,8 +113,38 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		T parse(byte[] data) throws InvalidProtocolBufferException;
 	}
 
-	private static final ExecutorService SUBSCRIBE_EXECUTOR =
-			Executors.newVirtualThreadPerTaskExecutor();
+	/**
+	 * One PLATFORM thread per subscribe session. Deliberately not
+	 * {@code newVirtualThreadPerTaskExecutor()}, which is what this was and
+	 * what silently killed the whole subscribe plane for 25 hours.
+	 *
+	 * A Kafka consumer poll loop is the exact shape virtual threads are not
+	 * for: long-lived, and blocking inside the classic consumer's
+	 * {@code synchronized} coordinator methods. A virtual thread that contends
+	 * on a lock while pinned by such a frame cannot unmount -- it parks ON its
+	 * carrier ({@code VirtualThread.parkOnCarrierThread}) and holds it for the
+	 * whole wait. The carrier count starts at one per CPU (2 on this fleet's
+	 * nodes), so with ~25 sessions all logging through one appender lock from
+	 * inside the coordinator monitor, carriers are consumed faster than the
+	 * scheduler can compensate and sessions submitted here stop being run at
+	 * all. Their consumers never poll and never heartbeat, the coordinator
+	 * evicts every member of their group one {@code session.timeout.ms} after
+	 * it stabilizes, and the gRPC stream stays open on both sides with nothing
+	 * flowing. A live thread dump of the wedged pod had 37 threads -- 20
+	 * subscribe loops, 11 gRPC request threads and 6 of Kafka's own heartbeat
+	 * threads -- parked on that one lock.
+	 *
+	 * Platform threads make each poll loop's blocking its own problem instead
+	 * of the scheduler's. See
+	 * {@code decisions/2026-09-15-kafka-consumer-starvation-fix.md}.
+	 *
+	 * Package-private so a test can assert what kind of thread this actually
+	 * runs on — the distinction is the whole fix and is invisible at the call
+	 * site, so nothing else would notice it being changed back.
+	 */
+	static final ExecutorService SUBSCRIBE_EXECUTOR =
+			Executors.newCachedThreadPool(
+					Thread.ofPlatform().daemon().name("eventbus-subscribe-", 0).factory());
 
 	private final KafkaSubscriber subscriber;
 	private final String kafkaTopic;
@@ -129,6 +159,13 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 	private final AtomicBoolean firstMessage = new AtomicBoolean(true);
 	/** Set once the stream has been failed, so a later onNext does not fail it twice. */
 	private final AtomicBoolean streamFailed = new AtomicBoolean(false);
+	/**
+	 * Whether the stream has already been terminated, so the session task's
+	 * finally block does not also call onCompleted — gRPC forbids invoking both
+	 * terminal methods on a stream. A field rather than a local of the session
+	 * task because the stall watchdog terminates the stream from its own thread.
+	 */
+	private final AtomicBoolean terminated = new AtomicBoolean(false);
 
 	/** Backward-compatible constructor without a namespace reader: the topic type
 	 *  declares no (spec.store_namespace) field, so every subscriber sees the
@@ -196,7 +233,7 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		}
 
 		// The tenant boundary on the read side. It is read HERE, on the gRPC
-		// thread, because the Kafka consumer below runs on a virtual thread
+		// thread, because the Kafka consumer below runs on its own thread
 		// where the caller's gRPC context is no longer current -- the claim
 		// would come back empty if it were read down there.
 		//
@@ -229,11 +266,13 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 			Session s = subscriber.createSession(kafkaTopic, params);
 			this.session = s;
 
+			// Terminate the stream from the watchdog's own thread when the
+			// consumer behind it stops polling. Leaving that to the poll loop
+			// is what made this failure silent: the loop is the thing that is
+			// stuck, so it may never reach the check.
+			s.onStalled(this::failStalled);
+
 			SUBSCRIBE_EXECUTOR.submit(() -> {
-				// Tracks whether the stream has already been terminated via
-				// onError so the finally block does not also call onCompleted —
-				// gRPC forbids invoking both terminal methods on a stream.
-				AtomicBoolean terminated = new AtomicBoolean(false);
 				try {
 					s.run(params, record -> {
 						try {
@@ -277,6 +316,21 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 									.asRuntimeException());
 						}
 					}
+				} catch (KafkaSubscriber.ConsumerStalledException e) {
+					// The consumer behind this stream stopped polling long
+					// enough that the coordinator has already dropped it from
+					// its group. Leaving the stream open is what made this
+					// failure silent: the client sees an open stream, no error
+					// and no events, so its reconnect loop never fires. Fail it.
+					logger.error("Consumer stalled on topic {}: {}", kafkaTopic, e.getMessage());
+					if (terminated.compareAndSet(false, true)) {
+						synchronized (responseObserver) {
+							responseObserver.onError(Status.UNAVAILABLE
+									.withDescription("Kafka consumer for topic " + kafkaTopic
+											+ " left its consumer group: " + e.getMessage())
+									.asRuntimeException());
+						}
+					}
 				} finally {
 					if (terminated.compareAndSet(false, true)) {
 						synchronized (responseObserver) {
@@ -288,6 +342,27 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		} else {
 			if (session != null) {
 				session.resubscribe(params);
+			}
+		}
+	}
+
+	/**
+	 * Fails the stream because the Kafka consumer behind it stopped polling long
+	 * enough that the coordinator has already dropped it from its group. Called
+	 * on the poll-stall watchdog's thread.
+	 *
+	 * This is the whole point of the change: a deaf consumer under an open
+	 * stream is indistinguishable from an idle topic, so the client's own
+	 * reconnect loop never fires. UNAVAILABLE is what makes it fire.
+	 */
+	private void failStalled(String reason) {
+		logger.error("Consumer stalled on topic {}, failing the stream: {}", kafkaTopic, reason);
+		if (terminated.compareAndSet(false, true)) {
+			synchronized (responseObserver) {
+				responseObserver.onError(Status.UNAVAILABLE
+						.withDescription("Kafka consumer for topic " + kafkaTopic
+								+ " left its consumer group: " + reason)
+						.asRuntimeException());
 			}
 		}
 	}

@@ -136,6 +136,14 @@ public class KafkaSubscriber {
     static final int MAX_POLL_RECORDS =
             intFromEnv("EVENTBUS_SUBSCRIBER_MAX_POLL_RECORDS", 500);
 
+    /**
+     * {@code session.timeout.ms}: how long the coordinator waits for a
+     * heartbeat before evicting a member. Named rather than inlined because
+     * the stall watchdog reports against it — a poll gap longer than this means
+     * the member is already gone, not that it is at risk.
+     */
+    static final long SESSION_TIMEOUT_MS = 30000L;
+
     /** Poll timeout (ms) used while a subscription is client-paused. */
     private static final long PAUSED_POLL_MS = 100;
 
@@ -207,6 +215,27 @@ public class KafkaSubscriber {
         }
     }
 
+    /**
+     * The consumer groups eventbus currently holds an ASSIGNED subscribe
+     * session for.
+     *
+     * The assignment gate is what makes this usable as a health signal: a
+     * session still waiting for partitions is legitimately not a group member
+     * yet, for up to the full assignment budget. Once it holds partitions,
+     * eventbus believes it is consuming, so a coordinator that reports the
+     * group as having no members is eventbus having gone deaf rather than a
+     * subscriber that went away. Read by {@code EventBusHandler.checkHealth}.
+     */
+    public static Set<String> assignedConsumerGroups() {
+        Set<String> groups = new HashSet<>();
+        for (Session session : LIVE_SESSIONS) {
+            if (session.assigned && !session.consumerGroup.isEmpty()) {
+                groups.add(session.consumerGroup);
+            }
+        }
+        return groups;
+    }
+
     private static void scanForPollStalls() {
         long now = System.nanoTime();
         for (Session session : LIVE_SESSIONS) {
@@ -242,6 +271,21 @@ public class KafkaSubscriber {
      */
     public static class PartitionAssignmentTimeoutException extends RuntimeException {
         public PartitionAssignmentTimeoutException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Thrown when a session that already held partitions stopped polling for
+     * longer than {@link #POLL_STALL_WARN_MS}. Past assignment a gap that long
+     * is decisive rather than suspicious: {@code session.timeout.ms} is 30s, so
+     * the coordinator has already evicted this member and the stream behind it
+     * is deaf. The gRPC layer surfaces it as {@code UNAVAILABLE} so the client
+     * reconnects instead of holding an open stream that will never deliver
+     * anything again.
+     */
+    public static class ConsumerStalledException extends RuntimeException {
+        public ConsumerStalledException(String message) {
             super(message);
         }
     }
@@ -337,6 +381,7 @@ public class KafkaSubscriber {
      */
     public class Session implements AutoCloseable {
         private final String topic;
+        private final String consumerGroup;
         private final KafkaConsumer<String, byte[]> consumer;
         private final AtomicReference<SeekParams> pending = new AtomicReference<>();
         private volatile boolean closed;
@@ -346,10 +391,39 @@ public class KafkaSubscriber {
         private volatile long lastPollNanos = System.nanoTime();
         /** Latches so one stall is logged once, not once per watchdog scan. */
         private volatile boolean pollStallReported;
+        /**
+         * True once this session holds partitions. Before that a long gap
+         * between polls is the watchdogged assignment wait, not a stall — the
+         * assignment budget is deliberately three times POLL_STALL_WARN_MS, so
+         * failing on the stall threshold there would kill every session that
+         * sits through a slow rebalance.
+         */
+        private volatile boolean assigned;
+        /** Set by the stall watchdog when it fails this session; read by run(). */
+        private volatile String stallFailure;
+        /**
+         * Invoked once, on the watchdog thread, when this session is failed for
+         * not polling. The gRPC layer registers one so the stream is terminated
+         * even when the poll thread is itself what is stuck — asking the stuck
+         * thread to notice is exactly the assumption that let this failure stay
+         * invisible for 25 hours. Null for sessions with no client stream
+         * behind them (the internal trace dispatch), which fall back to the
+         * exception {@link #run} throws when the loop does exit.
+         */
+        private volatile java.util.function.Consumer<String> stallListener;
 
-        private Session(String topic, KafkaConsumer<String, byte[]> consumer) {
+        private Session(String topic, String consumerGroup, KafkaConsumer<String, byte[]> consumer) {
             this.topic = topic;
+            this.consumerGroup = consumerGroup;
             this.consumer = consumer;
+        }
+
+        /**
+         * Registers the callback the stall watchdog fires when this session is
+         * failed. Must be set before {@link #run}.
+         */
+        public void onStalled(java.util.function.Consumer<String> listener) {
+            this.stallListener = listener;
         }
 
         /**
@@ -377,18 +451,51 @@ public class KafkaSubscriber {
             }
         }
 
-        /** Called by the shared watchdog; logs and counts a stalled poll loop once. */
-        private void checkPollStall(long nowNanos) {
+        /**
+         * Called by the shared watchdog; reports a stalled poll loop once, and
+         * for a session that already holds partitions, fails it.
+         *
+         * Reporting alone is what let this go unnoticed for 25 hours: the
+         * stream stays open, the client sees no error, and its reconnect loop
+         * never fires. Past assignment the threshold is twice
+         * {@code session.timeout.ms}, so a session that trips it is not "about
+         * to be" evicted — it already has been, and nothing it does short of
+         * rejoining will deliver another record. Ending the session is what
+         * puts that on the wire.
+         */
+        void checkPollStall(long nowNanos) {
             if (pollStallReported || closed) return;
             long stalledMs = (nowNanos - lastPollNanos) / 1_000_000;
             if (stalledMs <= POLL_STALL_WARN_MS) return;
             pollStallReported = true;
             pollStallsDetected.incrementAndGet();
+            if (!assigned) {
+                // Still inside the assignment wait, which has its own deadline
+                // and is allowed to run well past this threshold.
+                logger.error("Consumer poll loop STALLED on topic {} before partition assignment: "
+                                + "no successful poll for {}ms (warn after {}ms). The assignment "
+                                + "deadline governs this session, not this warning.",
+                        topic, stalledMs, POLL_STALL_WARN_MS);
+                return;
+            }
+            stallFailure = "no successful poll for " + stalledMs + "ms on topic " + topic
+                    + " (warn after " + POLL_STALL_WARN_MS + "ms, session.timeout.ms="
+                    + SESSION_TIMEOUT_MS + ")";
             logger.error("Consumer poll loop STALLED on topic {}: no successful poll for {}ms "
-                            + "(warn after {}ms, coordinator evicts at max.poll.interval.ms={}). "
-                            + "Consumption stops until it polls again; if it reaches the eviction "
-                            + "ceiling this member is dropped and its whole group rebalanced.",
-                    topic, stalledMs, POLL_STALL_WARN_MS, MAX_POLL_INTERVAL_MS);
+                            + "(warn after {}ms, session.timeout.ms={}). The coordinator has "
+                            + "already dropped this member, so the stream behind it is deaf — "
+                            + "failing the session so the client reconnects.",
+                    topic, stalledMs, POLL_STALL_WARN_MS, SESSION_TIMEOUT_MS);
+            closed = true;
+            consumer.wakeup();
+            java.util.function.Consumer<String> listener = stallListener;
+            if (listener != null) {
+                try {
+                    listener.accept(stallFailure);
+                } catch (RuntimeException e) {
+                    logger.error("Stall listener failed on topic {}: {}", topic, e.toString(), e);
+                }
+            }
         }
 
         /**
@@ -457,6 +564,13 @@ public class KafkaSubscriber {
             long startedNanos = System.nanoTime();
             try {
                 runLoop(initial, handler);
+                if (stallFailure != null) {
+                    throw new ConsumerStalledException(stallFailure);
+                }
+            } catch (ConsumerStalledException e) {
+                sessionsFailed.incrementAndGet();
+                // Propagate so the gRPC layer can surface UNAVAILABLE to the client.
+                throw e;
             } catch (PartitionAssignmentTimeoutException e) {
                 sessionsAssignTimedOut.incrementAndGet();
                 // Propagate so the gRPC layer can surface UNAVAILABLE to the client.
@@ -527,6 +641,7 @@ public class KafkaSubscriber {
                 }
             }
             sessionsAssigned.incrementAndGet();
+            assigned = true;
             logger.info("Partition assignment complete: topic={}, partitions={}", topic, partitions);
 
             applySeek(consumer, partitions, initial);
@@ -710,17 +825,17 @@ public class KafkaSubscriber {
      * The session closes its consumer when {@link Session#run} exits.
      */
     public Session createSession(String topic, SeekParams initial) {
+        String groupId = initial.consumerGroup() != null && !initial.consumerGroup().isEmpty()
+                ? initial.consumerGroup() : UUID.randomUUID().toString();
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG,
-                initial.consumerGroup() != null && !initial.consumerGroup().isEmpty()
-                        ? initial.consumerGroup() : UUID.randomUUID().toString());
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         // Allow time for group rebalancing to complete before timing out.
-        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, "30000");
+        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, Long.toString(SESSION_TIMEOUT_MS));
         props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, "5000");
         // Bound how long a wedged consumer can hold its partitions before the
         // coordinator evicts it. This must stay well ABOVE the
@@ -779,7 +894,7 @@ public class KafkaSubscriber {
             }
         }
 
-        return new Session(topic, consumer);
+        return new Session(topic, groupId, consumer);
     }
 
     private static void applySeek(KafkaConsumer<String, byte[]> consumer,
