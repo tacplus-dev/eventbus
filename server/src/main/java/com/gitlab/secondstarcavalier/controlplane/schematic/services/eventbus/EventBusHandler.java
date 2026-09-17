@@ -473,6 +473,19 @@ public class EventBusHandler implements Handler {
 				// unexplained for 131 retries.
 				logger.error("EventBus initialization failed (attempt {}, retrying in {}ms)",
 						attempt + 1, delayMs, e);
+				// initialize() may have already bound the embedded Kafka broker's
+				// listener ports before a later step (topic bootstrap, publisher/
+				// subscriber setup) threw. Without closing it here, the next
+				// retry's new KafkaEmbeddedBroker tries to bind the same ports
+				// and fails immediately with "Address already in use" forever.
+				if (broker != null) {
+					try {
+						broker.close();
+					} catch (Exception closeEx) {
+						logger.warn("Failed to close broker after failed init attempt: {}", closeEx.getMessage());
+					}
+					broker = null;
+				}
 				attempt++;
 				try {
 					Thread.sleep(delayMs);
