@@ -569,7 +569,17 @@ public class EventBusHandler implements Handler {
 					throws com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.getTopicInfo(request.getTopic())); }
-				catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) {
+					// A topic Kafka does not know is NOT_FOUND, not INTERNAL: stratum's startup replay
+					// (ColdStartRebuilder.awaitWatermarks) treats NOT_FOUND as "nothing to replay" and
+					// keeps its read gate closed on anything else.
+					for (Throwable t = e; t != null; t = t.getCause()) {
+						if (t instanceof org.apache.kafka.common.errors.UnknownTopicOrPartitionException) {
+							throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.NOT_FOUND, "topic not found: " + request.getTopic());
+						}
+					}
+					throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage());
+				}
 			}
 			@Override
 			public void deleteTopic(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
