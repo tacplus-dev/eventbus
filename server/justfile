@@ -1,6 +1,6 @@
 # Build eventbus-server shaded jar.
 
-TACPLUS_IMAGE := "registry.gitlab.com/secondstarcavalier/schematic/tacplus/tacplus-1-2:latest"
+TACPLUS_IMAGE := "registry.gitlab.com/seabeam/schematic/tacplus/tacplus-1-2:latest"
 
 default: build
 

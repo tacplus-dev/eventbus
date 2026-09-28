@@ -366,7 +366,7 @@ groups worked only because those five are platform topics.
 Rebuilding it correctly is blocked and **was not forced**:
 
 ```
-FAIL /Users/jody/workspace/gitlab/secondstarcavalier/schematic/tacplus is not at the pinned generator commit
+FAIL /Users/jody/workspace/gitlab/seabeam/schematic/tacplus is not at the pinned generator commit
      expected: b46e8ac10cef6ffd803db3343f2fa9909f9e5407
      actual:   31e3e62c8f694009cc70a08d42023f7bc11614de
 ```

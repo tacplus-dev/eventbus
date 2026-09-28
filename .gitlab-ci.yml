@@ -16,7 +16,7 @@ compute-image:
       fi
       MAJOR="$(echo "$TACPLUS_VER" | cut -d. -f1)"
       MINOR="$(echo "$TACPLUS_VER" | cut -d. -f2)"
-      REPO="secondstarcavalier/schematic/tacplus/tacplus-${MAJOR}-${MINOR}"
+      REPO="seabeam/schematic/tacplus/tacplus-${MAJOR}-${MINOR}"
       IMAGE="${CI_REGISTRY}/${REPO}:latest"
       echo "TACPLUS_IMAGE=${IMAGE}" > tacplus.env
       echo "Using tacplus image: ${IMAGE}"
@@ -26,7 +26,7 @@ compute-image:
 
 variables:
   MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
-  TACPLUS_PROJECT_PATH: "secondstarcavalier/schematic/tacplus"
+  TACPLUS_PROJECT_PATH: "seabeam/schematic/tacplus"
   DOCKER_TLS_CERTDIR: ""
   DOCKER_HOST: tcp://docker:2375
 
@@ -158,7 +158,7 @@ compute-validate-image:
       fi
       MAJOR="$(echo "$TACPLUS_VER" | cut -d. -f1)"
       MINOR="$(echo "$TACPLUS_VER" | cut -d. -f2)"
-      REPO="secondstarcavalier/schematic/tacplus/tacplus-${MAJOR}-${MINOR}"
+      REPO="seabeam/schematic/tacplus/tacplus-${MAJOR}-${MINOR}"
       echo "TACPLUS_IMAGE=${CI_REGISTRY}/${REPO}:latest" > tacplus.env
       echo "Using tacplus image: ${CI_REGISTRY}/${REPO}:latest" 
   artifacts:

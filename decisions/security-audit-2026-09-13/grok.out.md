@@ -18,94 +18,94 @@ I'll run a dedicated security review in parallel and inspect `server/src` and `c
 Security review is running. I'll read the production Java sources next.
 
 ● Read PublishHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /PublishHandler.java
   └ 1 line read
 
 ● Read EventBusHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Even
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Even
   │ tBusHandler.java
   └ 1 line read
 
 ● Todo started quality-audit
 
 ● Read EventBusServiceImpl.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /EventBusServiceImpl.java
   └ 311 lines read
 
 ● Read SubscribeHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /SubscribeHandler.java
   └ 419 lines read
 
 ● Read Main.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Main
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Main
   │ .java
   └ 16 lines read
 
 ● Read WatchTraceHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /WatchTraceHandler.java
   └ 99 lines read
 
 ● Read Bootstrap.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Boot
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Boot
   │ strap.java
   └ 37 lines read
 
 ● Read KafkaPublisher.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaPublisher.java
   └ 91 lines read
 
 ● Read EventBusHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Even
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Even
   │ tBusHandler.java
   └ L1:250 (250 lines read)
 
 ● Read PublishHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /PublishHandler.java
   └ L1:250 (250 lines read)
 
 ● Read KafkaSubscriber.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaSubscriber.java
   └ L1:250 (250 lines read)
 
 ● Read KafkaSubscriber.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaSubscriber.java
   └ L250:550 (301 lines read)
 
 ● Read PublishHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /PublishHandler.java
   └ L250:550 (205 lines read)
 
 ● Read EventBusHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Even
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Even
   │ tBusHandler.java
   └ L250:550 (301 lines read)
 
 ● Read TopicManager.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/TopicManager.java
   └ L1:250 (250 lines read)
 
 ● Read EventBusHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Even
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Even
   │ tBusHandler.java
   └ L550:900 (351 lines read)
 
 ● Read TopicManager.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/TopicManager.java
   └ L250:500 (143 lines read)
 
 ● Read KafkaSubscriber.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaSubscriber.java
   └ L550:900 (172 lines read)
 
@@ -115,37 +115,37 @@ Security review is running. I'll read the production Java sources next.
   └ 7 files found
 
 ● Read TopicDiscovery.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/TopicDiscover
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/TopicDiscover
   │ y.java
   └ L1:200 (200 lines read)
 
 ● Read EventBusHandler.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Even
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Even
   │ tBusHandler.java
   └ L900:1400 (165 lines read)
 
 ● Read TypedRpcGenerator.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/generator/Typ
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/generator/Typ
   │ edRpcGenerator.java
   └ L1:200 (200 lines read)
 
 / Search (glob)
-  │ "**/*.java" in server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/service
+  │ "**/*.java" in server/src/main/java/com/gitlab/seabeam/controlplane/schematic/service
   │ s/eventbus/kafka
   └ 4 files found
 
 ● Read TypedRpcGenerator.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/generator/Typ
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/generator/Typ
   │ edRpcGenerator.java
   └ L350:750 (76 lines read)
 
 ● Read TopicDiscovery.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/TopicDiscover
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/TopicDiscover
   │ y.java
   └ L200:500 (301 lines read)
 
 ● Read KafkaEmbeddedBroker.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaEmbeddedBroker.java
   └ L1:250 (250 lines read)
 
@@ -155,17 +155,17 @@ Security review is running. I'll read the production Java sources next.
   └ 1 file found
 
 ● Read KafkaEmbeddedBroker.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaEmbeddedBroker.java
   └ L250:500 (163 lines read)
 
 ● Read EventBusMojo.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/EventBusMojo.
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/EventBusMojo.
   │ java
   └ 76 lines read
 
 ● Read TopicRegistryGenerator.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/generator/Top
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/generator/Top
   │ icRegistryGenerator.java
   └ 83 lines read
 
@@ -178,17 +178,17 @@ Security review is running. I'll read the production Java sources next.
   └ 1 file found
 
 ● Read TypedRpcGenerator.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/generator/Typ
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/generator/Typ
   │ edRpcGenerator.java
   └ L200:360 (161 lines read)
 
 ● Read TopicAuthorizationTest.java
-  │ server/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Topi
+  │ server/src/test/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Topi
   │ cAuthorizationTest.java
   └ L1:80 (79 lines read)
 
 ● Read SubscribeTenantFilterTest.java
-  │ server/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/test/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /SubscribeTenantFilterTest.java
   └ L1:120 (119 lines read)
 
@@ -201,17 +201,17 @@ Security review is running. I'll read the production Java sources next.
   └ 38 lines read
 
 ● Read ClaimsProvenanceTest.java
-  │ server/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/Clai
+  │ server/src/test/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/Clai
   │ msProvenanceTest.java
   └ L1:80 (80 lines read)
 
 ● Read TopicDiscovery.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/TopicDiscover
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/TopicDiscover
   │ y.java
   └ L500:750 (102 lines read)
 
 ● Read ConsumerGroupBindingTest.java
-  │ server/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/test/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /ConsumerGroupBindingTest.java
   └ L1:80 (80 lines read)
 
@@ -224,17 +224,17 @@ Security review is running. I'll read the production Java sources next.
   └ 5 files found
 
 ● Read StringUtils.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/StringUtils.j
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/StringUtils.j
   │ ava
   └ 42 lines read
 
 ● Read CodegenConfig.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/CodegenConfig
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/CodegenConfig
   │ .java
   └ 32 lines read
 
 ● Read NamespaceStampTest.java
-  │ server/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/grpc
+  │ server/src/test/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/grpc
   │ /NamespaceStampTest.java
   └ L1:100 (99 lines read)
 
@@ -247,12 +247,12 @@ Security review is running. I'll read the production Java sources next.
   └ 2 files found
 
 ● Read TopicDiscoveryTest.java
-  │ codegen/src/test/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/TopicDiscover
+  │ codegen/src/test/java/com/gitlab/seabeam/controlplane/schematic/codegen/TopicDiscover
   │ yTest.java
   └ L1:80 (79 lines read)
 
 ● Read KafkaSubscriber.java
-  │ server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/services/eventbus/kafk
+  │ server/src/main/java/com/gitlab/seabeam/controlplane/schematic/services/eventbus/kafk
   │ a/KafkaSubscriber.java
   └ L620:680 (61 lines read)
 
@@ -269,7 +269,7 @@ Security review is running. I'll read the production Java sources next.
   └ 1 file found
 
 ● Read TypedRpcGenerator.java
-  │ codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codegen/generator/Typ
+  │ codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codegen/generator/Typ
   │ edRpcGenerator.java
   └ L1:50 (50 lines read)
 
@@ -323,27 +323,27 @@ Confirming exact line numbers for the quality findings, then I’ll publish the 
   └ 1 file found
 
 / Search (grep)
-  │ "return request;" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/ser
+  │ "return request;" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/ser
   │ vices/eventbus/EventBusHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "eventbus-trace-dispatch" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schem
+  │ "eventbus-trace-dispatch" (server/src/main/java/com/gitlab/seabeam/controlplane/schem
   │ atic/services/eventbus/EventBusHandler.java)
   └ 2 lines found
 
 / Search (grep)
-  │ "if \(newParams != null\)" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/sche
+  │ "if \(newParams != null\)" (server/src/main/java/com/gitlab/seabeam/controlplane/sche
   │ matic/services/eventbus/kafka/KafkaSubscriber.java)
   └ 1 line found
 
 / Search (grep)
-  │ "if \(publisher != null\)" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/sche
+  │ "if \(publisher != null\)" (server/src/main/java/com/gitlab/seabeam/controlplane/sche
   │ matic/services/eventbus/EventBusHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "actorStamper != null" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schemati
+  │ "actorStamper != null" (server/src/main/java/com/gitlab/seabeam/controlplane/schemati
   │ c/services/eventbus/grpc/PublishHandler.java)
   └ 1 line found
 
@@ -353,77 +353,77 @@ Confirming exact line numbers for the quality findings, then I’ll publish the 
   └ 2 lines found
 
 / Search (grep)
-  │ "knownTopics" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/service
+  │ "knownTopics" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/service
   │ s/eventbus/kafka/TopicManager.java)
   └ 6 lines found
 
 / Search (grep)
-  │ "controller.id" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/servi
+  │ "controller.id" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/servi
   │ ces/eventbus/kafka/TopicManager.java)
   └ 2 lines found
 
 / Search (grep)
-  │ "bigdata_name" (codegen/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/codeg
+  │ "bigdata_name" (codegen/src/main/java/com/gitlab/seabeam/controlplane/schematic/codeg
   │ en/TopicDiscovery.java)
   └ 1 line found
 
 / Search (grep)
-  │ "sessionsFailed.incrementAndGet" (server/src/main/java/com/gitlab/secondstarcavalier/controlplan
+  │ "sessionsFailed.incrementAndGet" (server/src/main/java/com/gitlab/seabeam/controlplan
   │ e/schematic/services/eventbus/kafka/KafkaSubscriber.java)
   └ 1 line found
 
 / Search (grep)
-  │ "stateStub.getAllNodes|setRole" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane
+  │ "stateStub.getAllNodes|setRole" (server/src/main/java/com/gitlab/seabeam/controlplane
   │ /schematic/services/eventbus/EventBusHandler.java)
   └ 2 lines found
 
 / Search (grep)
-  │ "setOnCancelHandler" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/
+  │ "setOnCancelHandler" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/
   │ services/eventbus/grpc/WatchTraceHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "handlerImpl =" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/servi
+  │ "handlerImpl =" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/servi
   │ ces/eventbus/EventBusHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "peer.getNodeId" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/serv
+  │ "peer.getNodeId" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/serv
   │ ices/eventbus/EventBusHandler.java)
   └ 2 lines found
 
 / Search (grep)
-  │ "consumer.poll\(Duration.ofMillis\(5000\)\)" (server/src/main/java/com/gitlab/secondstarcavalier
+  │ "consumer.poll\(Duration.ofMillis\(5000\)\)" (server/src/main/java/com/gitlab/seabeam
   │ /controlplane/schematic/services/eventbus/kafka/KafkaSubscriber.java)
   └ 1 line found
 
 / Search (grep)
-  │ "EventBusTypedService|addRemainingLazy" (codegen/src/main/java/com/gitlab/secondstarcavalier/con
+  │ "EventBusTypedService|addRemainingLazy" (codegen/src/main/java/com/gitlab/seabeam/con
   │ trolplane/schematic/codegen/generator/TypedRpcGenerator.java)
   └ 6 lines found
 
 / Search (grep)
-  │ "if \(subscriber" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schematic/ser
+  │ "if \(subscriber" (server/src/main/java/com/gitlab/seabeam/controlplane/schematic/ser
   │ vices/eventbus/EventBusHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "Failed to update TLS" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schemati
+  │ "Failed to update TLS" (server/src/main/java/com/gitlab/seabeam/controlplane/schemati
   │ c/services/eventbus/kafka/KafkaEmbeddedBroker.java)
   └ 1 line found
 
 / Search (grep)
-  │ "private class EventBusServiceHandlerImpl" (server/src/main/java/com/gitlab/secondstarcavalier/c
+  │ "private class EventBusServiceHandlerImpl" (server/src/main/java/com/gitlab/seabeam/c
   │ ontrolplane/schematic/services/eventbus/EventBusHandler.java)
   └ No matches found
 
 / Search (grep)
-  │ "class EventBusServiceHandlerImpl" (server/src/main/java/com/gitlab/secondstarcavalier/controlpl
+  │ "class EventBusServiceHandlerImpl" (server/src/main/java/com/gitlab/seabeam/controlpl
   │ ane/schematic/services/eventbus/EventBusHandler.java)
   └ 1 line found
 
 / Search (grep)
-  │ "public void shutdown" (server/src/main/java/com/gitlab/secondstarcavalier/controlplane/schemati
+  │ "public void shutdown" (server/src/main/java/com/gitlab/seabeam/controlplane/schemati
   │ c/services/eventbus/EventBusHandler.java)
   └ 1 line found
 
