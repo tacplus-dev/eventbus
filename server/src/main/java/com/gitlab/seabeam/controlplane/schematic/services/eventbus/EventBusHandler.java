@@ -542,6 +542,28 @@ public class EventBusHandler implements Handler {
 		return groupId;
 	}
 
+	/**
+	 * The error an Admin RPC returns for a failed TopicManager call. TopicManager
+	 * wraps Kafka's ExecutionException in a RuntimeException, so the Kafka error
+	 * is found by walking the cause chain: a topic or group Kafka does not know
+	 * is NOT_FOUND, a topic name Kafka rejects is INVALID_ARGUMENT, and anything
+	 * else is INTERNAL. NOT_FOUND is load-bearing: stratum's startup replay
+	 * (ColdStartRebuilder.awaitWatermarks) treats it from GetTopicInfo as
+	 * "nothing to replay" and keeps its read gate closed on anything else.
+	 */
+	static ProtoException adminError(Exception e) {
+		for (Throwable t = e; t != null; t = t.getCause()) {
+			if (t instanceof org.apache.kafka.common.errors.UnknownTopicOrPartitionException
+					|| t instanceof org.apache.kafka.common.errors.GroupIdNotFoundException) {
+				return new ProtoException(ProtoException.NOT_FOUND, e.getMessage() + ": " + t.getMessage());
+			}
+			if (t instanceof org.apache.kafka.common.errors.InvalidTopicException) {
+				return new ProtoException(ProtoException.INVALID_ARGUMENT, e.getMessage() + ": " + t.getMessage());
+			}
+		}
+		return new ProtoException(ProtoException.INTERNAL, e.getMessage());
+	}
+
 	@Override
 	public com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler getAdminGrpcImpl() {
 		return new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.s2sm.internal.grpc.servers.services.eventbus.Admin.AdminHandler() {
@@ -561,7 +583,7 @@ public class EventBusHandler implements Handler {
 					topics.sort(java.util.Comparator.comparing(Eventbus.TopicInfo::getName));
 					return pageByStringKey(topics, page, Eventbus.TopicInfo::getName);
 				} catch (ProtoException e) { throw e;
-				} catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public Eventbus.TopicInfo getTopicInfo(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
@@ -569,17 +591,7 @@ public class EventBusHandler implements Handler {
 					throws com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException {
 				checkReady();
 				try { return toProto(topicManager.getTopicInfo(request.getTopic())); }
-				catch (Exception e) {
-					// A topic Kafka does not know is NOT_FOUND, not INTERNAL: stratum's startup replay
-					// (ColdStartRebuilder.awaitWatermarks) treats NOT_FOUND as "nothing to replay" and
-					// keeps its read gate closed on anything else.
-					for (Throwable t = e; t != null; t = t.getCause()) {
-						if (t instanceof org.apache.kafka.common.errors.UnknownTopicOrPartitionException) {
-							throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.NOT_FOUND, "topic not found: " + request.getTopic());
-						}
-					}
-					throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage());
-				}
+				catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public void deleteTopic(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
@@ -632,7 +644,7 @@ public class EventBusHandler implements Handler {
 				String groupId = adminOwnedGroup(caller, request.getGroupId());
 				checkReady();
 				try { return toProto(topicManager.getConsumerGroupLag(groupId)); }
-				catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public CollectionRuntime.Page<Eventbus.ConsumerGroupInfo> listConsumerGroups(
@@ -653,7 +665,7 @@ public class EventBusHandler implements Handler {
 					groups.sort(java.util.Comparator.comparing(Eventbus.ConsumerGroupInfo::getGroupId));
 					return pageByStringKey(groups, page, Eventbus.ConsumerGroupInfo::getGroupId);
 				} catch (ProtoException e) { throw e;
-				} catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public void resetConsumerGroupOffsets(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
@@ -675,7 +687,7 @@ public class EventBusHandler implements Handler {
 					}
 					topicManager.resetConsumerGroupOffsets(groupId, request.getTopic(), mode, value);
 				} catch (com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException pe) { throw pe; }
-				catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public void deleteConsumerGroup(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller,
@@ -686,7 +698,7 @@ public class EventBusHandler implements Handler {
 				String groupId = adminOwnedGroup(caller, request.getGroupId());
 				checkReady();
 				try { topicManager.deleteConsumerGroup(groupId); }
-				catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				catch (Exception e) { throw adminError(e); }
 			}
 			@Override
 			public Eventbus.ClusterHealthResponse getClusterHealth(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Caller caller)
@@ -701,7 +713,7 @@ public class EventBusHandler implements Handler {
 								.setPort(bi.port()).setIsController(bi.isController()).build());
 					}
 					return builder.build();
-				} catch (Exception e) { throw new com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException(com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.errors.ProtoException.INTERNAL, e.getMessage()); }
+				} catch (Exception e) { throw adminError(e); }
 			}
 		};
 	}
