@@ -13,10 +13,10 @@ ARG VCS_REF
 ARG VERSION
 
 LABEL org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.authors="Second Star Cavalier LLC <cloudctlplane@seabeam.com>" \
+      org.opencontainers.image.authors="Seabeam LLC <cloudctlplane@seabeam.com>" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${VCS_REF}" \
-      org.opencontainers.image.vendor="Second Star Cavalier LLC" \
+      org.opencontainers.image.vendor="Seabeam LLC" \
       org.opencontainers.image.title="EventBus" \
       org.opencontainers.image.description="Event bus service with embedded Kafka broker"
 

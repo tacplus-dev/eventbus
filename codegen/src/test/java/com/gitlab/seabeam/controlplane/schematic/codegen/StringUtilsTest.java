@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Second Star Cavalier, LLC.
+// Copyright (c) 2026 Seabeam LLC. All rights reserved.
 package com.gitlab.seabeam.controlplane.schematic.codegen;
 
 import org.junit.jupiter.api.Test;
