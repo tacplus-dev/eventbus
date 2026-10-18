@@ -12,7 +12,7 @@ generated from the tacplus contract.
 > `graph_projection` and the two `*_store` annotations have no host at all.
 
 
-> Authoritative annotation contract: `schematic/tacplus/docs/RECORD_EVENT_MODEL.md`.
+> Authoritative annotation contract: `github.com/tacplus-dev/tacplus/docs/RECORD_EVENT_MODEL.md`.
 
 ## Role
 
