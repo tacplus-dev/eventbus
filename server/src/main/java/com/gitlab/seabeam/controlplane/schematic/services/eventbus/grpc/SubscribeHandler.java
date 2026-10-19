@@ -15,6 +15,7 @@ import com.google.protobuf.MessageLite;
 import com.google.protobuf.Timestamp;
 import com.google.protobuf.TimestampProto;
 import io.grpc.Status;
+import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -166,6 +167,8 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 	 * task because the stall watchdog terminates the stream from its own thread.
 	 */
 	private final AtomicBoolean terminated = new AtomicBoolean(false);
+	/** Set by the call's cancel handler, so a session onNext creates after the cancel is closed at once. */
+	private volatile boolean cancelled;
 
 	/** Backward-compatible constructor without a namespace reader: the topic type
 	 *  declares no (spec.store_namespace) field, so every subscriber sees the
@@ -183,6 +186,16 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		this.responseObserver = responseObserver;
 		this.parser = parser;
 		this.namespaceReader = namespaceReader;
+		// The client half-closes after its SubscribeRequest, and grpc-java does
+		// not deliver onError for a cancel that arrives after a half-close. The
+		// cancel handler is the only notice the server gets that the subscriber
+		// went away; without it the session's consumer stayed in its group
+		// holding partitions until the next record failed to send. Registered
+		// here because the bindings construct this inside the call's startup,
+		// where grpc requires it to be set.
+		if (responseObserver instanceof ServerCallStreamObserver<?> call) {
+			call.setOnCancelHandler(this::onCancelled);
+		}
 	}
 
 	/**
@@ -265,6 +278,11 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		if (firstMessage.compareAndSet(true, false)) {
 			Session s = subscriber.createSession(kafkaTopic, params);
 			this.session = s;
+			// A cancel that landed before the assignment above saw no session to
+			// close. run() still runs so the consumer is closed when it exits.
+			if (cancelled) {
+				s.close();
+			}
 
 			// Terminate the stream from the watchdog's own thread when the
 			// consumer behind it stops polling. Leaving that to the poll loop
@@ -416,11 +434,21 @@ public class SubscribeHandler<T extends MessageLite> implements StreamObserver<E
 		}
 	}
 
+	private void onCancelled() {
+		logger.debug("Client cancelled subscribe stream for topic {}", kafkaTopic);
+		cancelled = true;
+		Session s = session;
+		if (s != null) {
+			s.close();
+		}
+	}
+
 	@Override
 	public void onCompleted() {
 		// Client half-close means no more SubscribeRequests will be sent.
 		// Do NOT close the session — the server should keep streaming events
-		// until the client disconnects (onError with CANCELLED).
+		// until the client disconnects. After a half-close that disconnect
+		// arrives as the call's cancel handler, not onError.
 		logger.debug("Client half-closed subscribe stream for topic {}", kafkaTopic);
 	}
 
