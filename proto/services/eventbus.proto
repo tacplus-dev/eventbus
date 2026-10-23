@@ -1,0 +1,347 @@
+// Copyright (c) 2026 Seabeam LLC. All rights reserved.
+
+syntax = "proto3";
+
+package eventbus;
+
+import "sys/spec.proto";
+import "sys/host.proto";
+import "sys/trace.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option (spec.service) = {store: true};
+option (spec.grpc_s2s_client) = {service: "kernel.Mint"};
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// BackpressurePolicy controls what the server does when the client can't keep up.
+enum BackpressurePolicy {
+  // BACKPRESSURE_BUFFER: server buffers events until the client catches up.
+  // Default gRPC behaviour. Safe but risks unbounded memory if the client
+  // falls behind permanently.
+  BACKPRESSURE_BUFFER = 0;
+  // BACKPRESSURE_DROP_OLD: server skips ahead to the latest available offset,
+  // discarding events the client couldn't consume in time. The client sees
+  // a gap but never falls behind.
+  BACKPRESSURE_DROP_OLD = 1;
+  // BACKPRESSURE_SAMPLE: server delivers every Nth event (N = sample_interval),
+  // dropping the rest. Useful for dashboards that need shape, not completeness.
+  BACKPRESSURE_SAMPLE = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Subscribe
+// ---------------------------------------------------------------------------
+
+// SubscribeRequest is sent on the bidi stream to control replay.
+// The first message establishes the session; subsequent messages adjust
+// position, speed, pause state, or backpressure without closing the stream.
+//
+// Every field is applied as-is — the server replaces its current state
+// with the full contents of each new SubscribeRequest. To change only
+// the speed, the client re-sends the same seek + the new speed.
+message SubscribeRequest {
+  // Where to start (or jump to mid-stream).
+  oneof start_from {
+    int64 offset = 1 [(spec.assert_ge) = 0];
+    google.protobuf.Timestamp timestamp = 2;
+    bool latest = 3;
+    bool earliest = 4;
+  }
+
+  // Consumer group for offset tracking. Only read from the first message;
+  // ignored on subsequent resubscribes (consumer group is immutable per session).
+  string consumer_group = 5 [(spec.assert_max_size) = 256];
+
+  // speed_multiplier controls replay pacing relative to original event timestamps.
+  // 0 = max throughput (catch-up mode, no delay between events).
+  // 1.0 = real-time (events delivered at the same rate they were produced).
+  // 10.0 = 10x fast-forward.
+  // Can be changed mid-stream without seeking.
+  double speed_multiplier = 6 [(spec.assert_float) = {ge: 0, le: 1000}];
+
+  // pause stops delivery without closing the stream or releasing the consumer.
+  // The server holds its position. Send pause=false (or a new seek) to resume.
+  bool pause = 7;
+
+  // backpressure tells the server what to do when the client is slow.
+  BackpressurePolicy backpressure = 8 [(spec.assert_enum_defined) = true];
+
+  // sample_interval: when backpressure=BACKPRESSURE_SAMPLE, deliver every
+  // Nth event and drop the rest. Ignored for other policies.
+  int32 sample_interval = 9 [(spec.default_int) = 1, (spec.assert_ge) = 1, (spec.assert_le) = 10000];
+
+  // partitions restricts consumption to specific partition IDs.
+  // Empty = subscribe to all partitions (default, uses consumer-group rebalancing).
+  // When set, uses manual assignment (no rebalancing).
+  repeated int32 partitions = 10 [(spec.assert_max_size) = 256];
+}
+
+// ---------------------------------------------------------------------------
+// Publish
+// ---------------------------------------------------------------------------
+
+// PublishResponse confirms a message was persisted.
+// The topic is implicit — determined by which typed RPC is called.
+message PublishResponse {
+  int32 partition = 1 [(spec.assert_ge) = 0];
+  int64 offset = 2 [(spec.assert_ge) = 0];
+}
+
+// ---------------------------------------------------------------------------
+// Record metadata
+// ---------------------------------------------------------------------------
+
+// RecordMeta carries Kafka record metadata alongside typed payloads.
+// This shape is the wire contract for generated typed Subscribe envelopes and
+// must stay aligned with tacplus's EventBus support proto and broker emission.
+message RecordMeta {
+  bytes key = 1;
+  string topic = 2 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  int32 partition = 3 [(spec.assert_ge) = 0];
+  int64 offset = 4 [(spec.assert_ge) = 0];
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Topic admin
+// ---------------------------------------------------------------------------
+
+// TopicInfo describes a Kafka topic.
+message TopicInfo {
+  string name = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  int32 partition_count = 2 [(spec.assert_ge) = 1];
+  int64 retention_ms = 3 [(spec.assert_ge) = -1];
+  map<int32, int64> earliest_offsets = 4 [(spec.assert_max_size) = 256];
+  map<int32, int64> latest_offsets = 5 [(spec.assert_max_size) = 256];
+}
+
+message TopicInfoRequest {
+  string topic = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+}
+
+message ListTopicsRequest {
+  // page_size 0 uses the method_collection default.
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListTopicsResponse {
+  repeated TopicInfo topics = 1 [(spec.assert_max_size) = 4096];
+  string next_page_token = 2;
+  int64 total_count = 3;
+}
+
+message DeleteTopicRequest {
+  string topic = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+}
+
+message UpdateTopicConfigRequest {
+  string topic = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  // retention_ms: new retention in milliseconds. -1 = infinite. 0 = no change.
+  int64 retention_ms = 2 [(spec.assert_ge) = -1];
+  // partition_count: new total partition count. Must be >= current count.
+  // Kafka does not support decreasing partitions. 0 = no change.
+  int32 partition_count = 3 [(spec.assert_ge) = 0, (spec.assert_le) = 256];
+}
+
+// ---------------------------------------------------------------------------
+// Consumer group admin
+// ---------------------------------------------------------------------------
+
+message PartitionLag {
+  string topic = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  int32 partition = 2 [(spec.assert_ge) = 0];
+  int64 committed_offset = 3 [(spec.assert_ge) = -1];
+  int64 end_offset = 4 [(spec.assert_ge) = 0];
+  int64 lag = 5 [(spec.assert_ge) = 0];
+}
+
+message ConsumerGroupInfo {
+  string group_id = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  // state: Kafka consumer group state (Stable, Empty, Dead, etc.)
+  string state = 2 [(spec.assert_max_size) = 64];
+  repeated PartitionLag partitions = 3 [(spec.assert_max_size) = 1024];
+  int64 total_lag = 4 [(spec.assert_ge) = 0];
+}
+
+message ConsumerGroupRequest {
+  string group_id = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+}
+
+message ListConsumerGroupsRequest {
+  // page_size 0 uses the method_collection default.
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListConsumerGroupsResponse {
+  repeated ConsumerGroupInfo groups = 1 [(spec.assert_max_size) = 4096];
+  string next_page_token = 2;
+  int64 total_count = 3;
+}
+
+message ResetConsumerGroupOffsetsRequest {
+  string group_id = 1 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  string topic = 2 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  oneof reset_to {
+    int64 offset = 3 [(spec.assert_ge) = 0];
+    google.protobuf.Timestamp timestamp = 4;
+    bool to_latest = 5;
+    bool to_earliest = 6;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cluster health
+// ---------------------------------------------------------------------------
+
+message BrokerInfo {
+  int32 id = 1 [(spec.assert_ge) = 0];
+  string host = 2 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+  int32 port = 3 [(spec.assert_ge) = 1, (spec.assert_le) = 65535];
+  bool is_controller = 4;
+}
+
+message ClusterHealthResponse {
+  int32 broker_count = 1 [(spec.assert_ge) = 0];
+  repeated BrokerInfo brokers = 2 [(spec.assert_max_size) = 64];
+  int32 controller_id = 3 [(spec.assert_ge) = -1];
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+// Admin provides control RPCs (admin, replay).
+// Typed per-topic Publish/Subscribe RPCs are GENERATED by the Maven plugin
+// based on spec.topic annotations on state roots with label: "eventbus".
+service Admin {
+  option (spec.service_s2s) = {auth_services: ["*"]};
+
+  // Topic admin.
+  rpc ListTopics(ListTopicsRequest) returns (ListTopicsResponse) {
+    option (spec.method_collection) = {mode: COLLECTION_MODE_PAGE, order_by: ["name"], default_page_size: 100};
+  }
+  rpc GetTopicInfo(TopicInfoRequest) returns (TopicInfo);
+  rpc DeleteTopic(DeleteTopicRequest) returns (google.protobuf.Empty);
+  rpc UpdateTopicConfig(UpdateTopicConfigRequest) returns (TopicInfo);
+
+  // Consumer group admin.
+  rpc GetConsumerGroupLag(ConsumerGroupRequest) returns (ConsumerGroupInfo);
+  rpc ListConsumerGroups(ListConsumerGroupsRequest) returns (ListConsumerGroupsResponse) {
+    option (spec.method_collection) = {mode: COLLECTION_MODE_PAGE, order_by: ["group_id"], default_page_size: 100};
+  }
+  rpc ResetConsumerGroupOffsets(ResetConsumerGroupOffsetsRequest) returns (google.protobuf.Empty);
+  rpc DeleteConsumerGroup(ConsumerGroupRequest) returns (google.protobuf.Empty);
+
+  // Cluster health.
+  rpc GetClusterHealth(google.protobuf.Empty) returns (ClusterHealthResponse);
+}
+
+// TraceSession provides client-facing trace session management.
+// SubscribeTrace opens a server-streaming trace session: the server generates a
+// unique trace_id and sends it as the first TraceEvent (only trace_id set).
+// Services processing requests tagged with that trace_id publish TraceEvents
+// to the trace topic. EventBus dispatches matching events to this stream.
+service TraceSession {
+  option (spec.service_c2s) = {};
+
+  rpc SubscribeTrace(trace.TraceRequest) returns (stream trace.TraceEvent) {
+    option (spec.rpc) = {principal: RPC_PRINCIPAL_USER, exposure: RPC_EXPOSURE_EXTERNAL, flags: [RPC_FLAG_PUBLIC_NO_AUTH]};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+// KafkaNodeRole determines the embedded Kafka (KRaft) process role.
+// Peer discovery happens at runtime via EventbusState — no static bootstrap config.
+enum KafkaNodeRole {
+  KAFKA_ROLE_UNDEFINED = 0;
+  // KAFKA_ROLE_COMBINED: runs both broker and controller in one process.
+  // Simplest deployment for small clusters (3-5 nodes).
+  KAFKA_ROLE_COMBINED = 1;
+  // KAFKA_ROLE_BROKER: data-only node. Stores partitions, serves producers
+  // and consumers. Scales horizontally.
+  KAFKA_ROLE_BROKER = 2;
+  // KAFKA_ROLE_CONTROLLER: metadata quorum only. Runs the KRaft consensus
+  // protocol for leader election and partition assignment.
+  // Deploy an odd number (3 or 5) for quorum.
+  KAFKA_ROLE_CONTROLLER = 3;
+}
+
+// Config for the event-bus service. Stored in kernel via grpc_config.
+// At boot, eventbus connects to kernel to fetch this config, then merges
+// with env vars (env takes precedence via PROTO_CONFIG_* env var mappings).
+message Config {
+  option (spec.grpc_config) = {service_name: "eventbus"};
+
+  // node_role determines the embedded Kafka (KRaft) process role.
+  KafkaNodeRole node_role = 1 [(spec.assert_enum_defined) = true];
+
+  // data_dir is the Kafka log/data directory.
+  string data_dir = 2 [(spec.default_string) = "/var/lib/eventbus/data", (spec.assert_file_path) = PATH_DIR];
+
+  // default_retention_hours for new topics. Default: 168 (7 days).
+  int32 default_retention_hours = 3 [(spec.default_int) = 168, (spec.assert_ge) = 1];
+
+  // default_partitions for new topics. Default: 6.
+  int32 default_partitions = 4 [(spec.default_int) = 6, (spec.assert_ge) = 1, (spec.assert_le) = 256];
+
+  // default_replication_factor for new topics. Default: 3.
+  int32 default_replication_factor = 5 [(spec.default_int) = 3, (spec.assert_ge) = 1, (spec.assert_le) = 10];
+
+  // controller_count is the expected number of Controller nodes. Default: 3.
+  int32 controller_count = 6 [(spec.default_int) = 3, (spec.assert_ge) = 1];
+
+  // broker_count is the expected number of Broker nodes. Default: 1.
+  int32 broker_count = 7 [(spec.default_int) = 1, (spec.assert_ge) = 1];
+
+  // broker_port is the Kafka broker listener port.
+  int32 broker_port = 8 [(spec.default_int) = 9092, (spec.assert_ge) = 1, (spec.assert_le) = 65535];
+
+  // controller_port is the KRaft controller listener port.
+  int32 controller_port = 9 [(spec.default_int) = 9093, (spec.assert_ge) = 1, (spec.assert_le) = 65535];
+
+  // node_id is the unique KRaft node identifier for this instance.
+  int32 node_id = 10 [(spec.assert_ge) = 0];
+
+  // cluster_seed is a stable string used to deterministically derive the KRaft cluster UUID.
+  string cluster_seed = 11 [(spec.assert_required) = true, (spec.assert_max_size) = 256];
+
+  // state_refresh_interval_seconds controls how often this node re-registers in EventbusState.
+  int32 state_refresh_interval_seconds = 12 [(spec.default_int) = 60, (spec.assert_ge) = 5];
+}
+
+// ============================================================================
+// State (stored in kernel)
+// ============================================================================
+
+// EventbusNode represents a single eventbus (Kafka) instance registered in shared state.
+// Each node publishes its own entry on startup and refreshes it periodically.
+message EventbusNode {
+  // node_id is the unique KRaft node identifier.
+  int32 node_id = 1 [(spec.indexed) = true, (spec.assert_ge) = 0];
+  // role is the KRaft role of this node.
+  KafkaNodeRole role = 2 [(spec.assert_required) = true];
+  // endpoint is the host + controller port other nodes use for KRaft consensus.
+  host.Host endpoint = 3 [(spec.assert_required) = true];
+}
+
+// EventbusState holds shared state for eventbus node discovery.
+// Each instance writes its own EventbusNode entry on startup.
+// Peers discover each other via Watch on this collection for KRaft voter list construction.
+message EventbusState {
+  option (spec.service_state) = {label: ["kernel"], auto_tls: TLS_KEY_TYPE_ECDSA};
+
+  // nodes is the collection of registered eventbus instances.
+  // Keyed by node_id. Stale entries are not evicted (tacplus rejects eviction_ttl_seconds; see spec.proto).
+  repeated EventbusNode nodes = 1 [
+    (spec.assert_max_size) = 32
+  ];
+}
