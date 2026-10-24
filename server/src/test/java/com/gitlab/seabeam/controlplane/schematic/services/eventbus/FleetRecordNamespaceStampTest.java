@@ -12,11 +12,10 @@ import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.key.KeyHelpers;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Auth;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.token.TokenWrapper;
-import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.accounting.Accounting;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.jwk.JwkOuterClass;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.key.KeyOuterClass;
+import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.services.letsencrypt.Letsencrypt;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.trace.Trace;
-import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.vservices.accountingrecord.Accountingrecord;
 
 import com.google.protobuf.Message;
 
@@ -62,13 +61,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * stamper lambda and {@code opa.NamespaceEntitlementsPolicy} standing in for a
  * record, because at the time it was written no fleet record type carried the
  * field in this checkout's generated model. They do now, so this asserts the
- * thing that actually ships: {@code accountingrecord.AccountingRecord} published
+ * thing that actually ships: {@code letsencrypt.LetsEncryptCert} published
  * over a real gRPC socket, through the real chassis {@link Authorizer}, into the
  * per-topic {@link ServerServiceDefinition} that
  * {@link TypedEventBusBindings#buildPerTopicLazy} builds, with the stamper the
  * generator emitted — read back off the broker and parsed.
  *
- * <p>The pair is a real one, not a constructed one: {@code AccountingRecord} is
+ * <p>The pair is a real one, not a constructed one: {@code LetsEncryptCert} is
  * a {@code (spec.record)} and declares {@code (spec.store_namespace)}, so its
  * binding carries a stamper; {@code sys.trace.TraceEvent} is the fleet's one
  * topic type that is not a record and declares no namespace field, so its
@@ -78,7 +77,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class FleetRecordNamespaceStampTest {
 
     private static final String AUDIENCE = "eventbus";
-    private static final String CALLER_SERVICE = "agentsensor";
+    private static final String CALLER_SERVICE = "letsencrypt";
     private static final String CALLER_NAMESPACE = "/local/acme";
     /** The tenant a publishing service writes a row on behalf of — never its own. */
     private static final String ON_BEHALF_OF_NAMESPACE = "/local/someone-elses-tenant";
@@ -140,37 +139,39 @@ class FleetRecordNamespaceStampTest {
      * this behaviour existed.
      */
     @Test
-    void accountingRecord_keepsARowSetNamespace_andStampsAnEmptyOne() throws Exception {
+    void letsEncryptCert_keepsARowSetNamespace_andStampsAnEmptyOne() throws Exception {
         ImmutableKey key = newTestKey();
         Server server = startServer(authorizerWithKey(key));
         try {
-            Accountingrecord.AccountingRecord delegated = Accountingrecord.AccountingRecord.newBuilder()
-                    .setAccountingId("acct-1")
-                    .setLevel(Accounting.EventLevel.EVENT_LEVEL_INFO)
+            Letsencrypt.LetsEncryptCert delegated = Letsencrypt.LetsEncryptCert.newBuilder()
+                    .setCertSetId("cert-set-1")
+                    .setCertmagicState(Letsencrypt.CertMagicState.getDefaultInstance())
+                    .addHostnames("one.example.test")
                     .setNamespace(ON_BEHALF_OF_NAMESPACE)
                     .build();
             Status delegatedStatus = call(server, serviceToken(key),
-                    erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM), delegated);
+                    erase(TypedEventBusBindings.PUBLISH_TO_LETS_ENCRYPT_CERT_BUS_STREAM), delegated);
             assertEquals(Status.Code.OK, delegatedStatus.getCode(),
                     "publish should have succeeded; got " + delegatedStatus);
 
-            Accountingrecord.AccountingRecord ownBehalf = Accountingrecord.AccountingRecord.newBuilder()
-                    .setAccountingId("acct-2")
-                    .setLevel(Accounting.EventLevel.EVENT_LEVEL_INFO)
+            Letsencrypt.LetsEncryptCert ownBehalf = Letsencrypt.LetsEncryptCert.newBuilder()
+                    .setCertSetId("cert-set-2")
+                    .setCertmagicState(Letsencrypt.CertMagicState.getDefaultInstance())
+                    .addHostnames("two.example.test")
                     .build();
             Status ownStatus = call(server, serviceToken(key),
-                    erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM), ownBehalf);
+                    erase(TypedEventBusBindings.PUBLISH_TO_LETS_ENCRYPT_CERT_BUS_STREAM), ownBehalf);
             assertEquals(Status.Code.OK, ownStatus.getCode(),
                     "publish should have succeeded; got " + ownStatus);
 
             List<KafkaSubscriber.Record> records =
-                    readFirst(TopicRegistry.TOPIC_ACCOUNTING_RECORD_BUS_STREAM, 2);
+                    readFirst(TopicRegistry.TOPIC_LETS_ENCRYPT_CERT_BUS_STREAM, 2);
             assertEquals(2, records.size(), "both publishes should have reached the log");
             assertEquals(ON_BEHALF_OF_NAMESPACE,
-                    Accountingrecord.AccountingRecord.parseFrom(records.get(0).value()).getNamespace(),
+                    Letsencrypt.LetsEncryptCert.parseFrom(records.get(0).value()).getNamespace(),
                     "a row the publishing service already tenanted must keep that tenant");
             assertEquals(CALLER_NAMESPACE,
-                    Accountingrecord.AccountingRecord.parseFrom(records.get(1).value()).getNamespace(),
+                    Letsencrypt.LetsEncryptCert.parseFrom(records.get(1).value()).getNamespace(),
                     "a row that arrived with no tenant must carry the caller's namespace claim");
         } finally {
             shutdown(server);
