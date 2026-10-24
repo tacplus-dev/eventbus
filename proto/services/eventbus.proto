@@ -278,6 +278,16 @@ enum KafkaNodeRole {
 // Config for the event-bus service. Stored in kernel via grpc_config.
 // At boot, eventbus connects to kernel to fetch this config, then merges
 // with env vars (env takes precedence via PROTO_CONFIG_* env var mappings).
+// TraceEventBus holds the trace topic for per-hop trace events: every service
+// processing a traced request publishes a TraceEvent here, and SubscribeTrace
+// below dispatches matching events to the caller's stream. The topic belongs to
+// the service that dispatches it; publishers reference
+// eventbus.TraceEventBus.trace_events.
+message TraceEventBus {
+  option (spec.service_event) = {label: "eventbus"};
+  trace.TraceEvent trace_events = 1 [(spec.topic) = true];
+}
+
 message Config {
   option (spec.grpc_config) = {service_name: "eventbus"};
 
