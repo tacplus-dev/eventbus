@@ -24,7 +24,7 @@ COPY --from=setup --chown=65532:65532 /var/lib/eventbus /var/lib/eventbus
 COPY server/target/event-bus.jar /app/event-bus.jar
 
 ARG TARGETARCH
-COPY launcher-linux-${TARGETARCH} /usr/local/bin/eventbus
+COPY launcher-linux-${TARGETARCH} /usr/local/bin/launcher
 
 USER nonroot
 
@@ -33,4 +33,4 @@ ENV HEALTH_PORT=8443
 
 VOLUME /var/lib/eventbus/data
 
-ENTRYPOINT ["eventbus"]
+ENTRYPOINT ["launcher"]
