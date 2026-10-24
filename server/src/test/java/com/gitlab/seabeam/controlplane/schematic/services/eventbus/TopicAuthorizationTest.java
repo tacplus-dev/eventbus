@@ -8,8 +8,6 @@ import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.servicemanager.Auth;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.chassis.token.TokenWrapper;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.services.eventbus.Eventbus;
-import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.vservices.accountingrecord.Accountingrecord;
-import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.vservices.agentsensor.Agentsensor;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.jwk.JwkOuterClass;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.key.KeyOuterClass;
 import com.gitlab.seabeam.controlplane.schematic.services.eventbus.model.types.sys.trace.Trace;
@@ -26,6 +24,7 @@ import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.ServerInterceptor;
 import io.grpc.ServerInterceptors;
+import io.grpc.ServerMethodDefinition;
 import io.grpc.ServerServiceDefinition;
 import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
@@ -35,8 +34,10 @@ import io.grpc.stub.StreamObserver;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -45,6 +46,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * F15: eventbus topics are authenticated but not authorized.
@@ -213,20 +216,8 @@ class TopicAuthorizationTest {
             erase(TypedEventBusBindings.PUBLISH_TO_TRACE_EVENT_BUS_TRACE_EVENTS);
     private static final MethodDescriptor<Message, Object> SUBSCRIBE_TRACE =
             erase(TypedEventBusBindings.SUBSCRIBE_TO_TRACE_EVENT_BUS_TRACE_EVENTS);
-    private static final MethodDescriptor<Message, Object> PUBLISH_AGENT =
-            erase(TypedEventBusBindings.PUBLISH_TO_AGENT_EVENT_BUS_EVENT_STREAM);
-    private static final MethodDescriptor<Message, Object> SUBSCRIBE_AGENT =
-            erase(TypedEventBusBindings.SUBSCRIBE_TO_AGENT_EVENT_BUS_EVENT_STREAM);
-
-    // Two topics that spell the SAME rpc name, with different auth_services:
-    // both fields are named "stream", so both rpcs are PublishToStream.
-    private static final MethodDescriptor<Message, Object> PUBLISH_ACCOUNTING_STREAM =
-            erase(TypedEventBusBindings.PUBLISH_TO_ACCOUNTING_RECORD_BUS_STREAM);
-    private static final MethodDescriptor<Message, Object> PUBLISH_AGENT_SESSION_STREAM =
-            erase(TypedEventBusBindings.PUBLISH_TO_AGENT_SESSION_STATE_BUS_STREAM);
-
-    private static final Message ACCOUNTING_RECORD = Accountingrecord.AccountingRecord.getDefaultInstance();
-    private static final Message AGENT_SESSION = Agentsensor.AgentSessionState.getDefaultInstance();
+    private static final MethodDescriptor<Message, Object> SUBSCRIBE_LETS_ENCRYPT_CERT =
+            erase(TypedEventBusBindings.SUBSCRIBE_TO_LETS_ENCRYPT_CERT_BUS_STREAM);
 
     private static final Message TRACE_EVENT = Trace.TraceEvent.getDefaultInstance();
     private static final Message SUBSCRIBE_REQUEST = Eventbus.SubscribeRequest.getDefaultInstance();
@@ -240,7 +231,7 @@ class TopicAuthorizationTest {
         Server server = startServer(authorizer, true);
         try {
             // "tasks" holds a perfectly valid eventbus-audience token. The trace
-            // topic's auth_services is ["agentsensor"], so it must not get in.
+            // topic's auth_services is ["eventbus"], so it must not get in.
             Status s = call(server, serviceToken(key, "tasks"), PUBLISH_TRACE, TRACE_EVENT);
             assertEquals(Status.Code.PERMISSION_DENIED, s.getCode(),
                     "tasks must not publish to the trace topic; got " + s);
@@ -269,27 +260,6 @@ class TopicAuthorizationTest {
     }
 
     @Test
-    void publishToAgentTopic_anyServiceIsAllowed() throws Exception {
-        // agentsensor's PublishTo* methods declare s2s: {auth_services: ["*"]}
-        // deliberately (any service may emit agent telemetry) — see
-        // decisions/eventbus-agentsensor-publish-star-is-deliberate-2026-09-01.md.
-        // This asserts the open producer policy, not a leak.
-        ImmutableKey key = newTestKey();
-        Authorizer authorizer = authorizerWithKey(key);
-        Server server = startServer(authorizer, true);
-        try {
-            Status s = call(server, serviceToken(key, "sentinel"), PUBLISH_AGENT,
-                    com.gitlab.seabeam.controlplane.schematic.services.eventbus.model
-                            .types.vservices.agentsensor.Agentsensor.AgentEvent.getDefaultInstance());
-            assertNotEquals(Status.Code.PERMISSION_DENIED, s.getCode(),
-                    "sentinel holds a valid eventbus-audience token and agentsensor publish is "
-                            + "s2s: [\"*\"]; it must reach the handler, not be denied; got " + s);
-        } finally {
-            shutdown(server);
-        }
-    }
-
-    @Test
     void userTokenWithoutEntitlements_isDenied() throws Exception {
         ImmutableKey key = newTestKey();
         Authorizer authorizer = authorizerWithKey(key);
@@ -312,11 +282,11 @@ class TopicAuthorizationTest {
         Authorizer authorizer = authorizerWithKey(key);
         Server server = startServer(authorizer, true);
         try {
-            Status s = call(server, serviceToken(key, "agentsensor"), PUBLISH_TRACE, TRACE_EVENT);
+            Status s = call(server, serviceToken(key, "eventbus"), PUBLISH_TRACE, TRACE_EVENT);
             // Authorization passed, so the call reached the generated body, which
             // reports UNAVAILABLE because no Kafka is wired in this test.
             assertEquals(Status.Code.UNAVAILABLE, s.getCode(),
-                    "agentsensor must reach the publish handler; got " + s);
+                    "eventbus must reach the publish handler; got " + s);
             assertTrue(s.getDescription() != null && s.getDescription().contains("Kafka"),
                     "expected the handler's own UNAVAILABLE: " + s.getDescription());
         } finally {
@@ -325,28 +295,28 @@ class TopicAuthorizationTest {
     }
 
     /**
-     * The agent event topic's SUBSCRIBE policy is ["stratum"], from the record's
-     * (spec.record).s2s_subscribe. Both halves are asserted here because the
-     * producing service losing its automatic read is the entire point of the
-     * declaration: before it existed, SubscribeToEventStream carried no policy
-     * of its own and fell back to the synthesized AgentEventBus wrapper's
+     * The LetsEncryptCert topic's SUBSCRIBE policy is ["stratum"], from the
+     * record's (spec.record).s2s_subscribe. Both halves are asserted here because
+     * the producing service losing its automatic read is the entire point of the
+     * declaration: before it existed, SubscribeToStream carried no policy of its
+     * own and fell back to the synthesized LetsEncryptCertBus wrapper's
      * service-level list, which resolves to the OWNING PACKAGE. That gave
-     * agentsensor — the publisher — a read it was never meant to have, and
+     * letsencrypt — the publisher — a read it was never meant to have, and
      * denied stratum, the record store, the only read the topic exists to serve.
      */
     @Test
-    void subscribeToAgentTopic_onlyTheDeclaredSubscriberGetsThrough() throws Exception {
+    void subscribeToRecordTopic_onlyTheDeclaredSubscriberGetsThrough() throws Exception {
         ImmutableKey key = newTestKey();
         Authorizer authorizer = authorizerWithKey(key);
         Server server = startServer(authorizer, true);
         try {
-            Status store = call(server, serviceToken(key, "stratum"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
+            Status store = call(server, serviceToken(key, "stratum"), SUBSCRIBE_LETS_ENCRYPT_CERT, SUBSCRIBE_REQUEST);
             assertEquals(Status.Code.UNAVAILABLE, store.getCode(),
                     "stratum is the declared subscriber and must reach the handler; got " + store);
 
-            Status producer = call(server, serviceToken(key, "agentsensor"), SUBSCRIBE_AGENT, SUBSCRIBE_REQUEST);
+            Status producer = call(server, serviceToken(key, "letsencrypt"), SUBSCRIBE_LETS_ENCRYPT_CERT, SUBSCRIBE_REQUEST);
             assertEquals(Status.Code.PERMISSION_DENIED, producer.getCode(),
-                    "agentsensor publishes this topic but must not read it back; got " + producer);
+                    "letsencrypt publishes this topic but must not read it back; got " + producer);
         } finally {
             shutdown(server);
         }
@@ -355,40 +325,36 @@ class TopicAuthorizationTest {
     // ---- SAME RPC NAME, DIFFERENT TOPIC: policies must not bleed across ----
 
     /**
-     * accountingrecord.AccountingRecordBusStateService/PublishToStream and
-     * agentsensor.AgentSessionStateBusStateService/PublishToStream share a bare
-     * rpc name and declare different auth_services. Both halves in one test: the
-     * accountingrecord caller reaches its own topic's handler and is refused on
-     * agentsensor's. Keyed by bare rpc name — as the chassis Authorizer did
-     * before this change — one policy overwrote the other and one of these two
-     * assertions had to fail.
+     * Two topics that share a bare rpc name (every record field named "stream"
+     * yields a PublishToStream) and declare different auth_services must keep
+     * their policies apart. Keyed by bare rpc name — as the chassis Authorizer
+     * did before this change — one policy overwrote the other, so a caller
+     * entitled on one topic was either refused there or admitted on the other.
+     *
+     * <p>The regression needs such a pair in the generated bindings. This fleet
+     * declares one topic per bare rpc name, so the test is skipped naming what
+     * is missing; when a fleet gains the pair it fails instead, because the
+     * assertions have to be written against that pair's concrete types.
      */
     @Test
-    void sameRpcNameOnTwoTopics_policiesStayApart() throws Exception {
-        // Both accounting-record and agentsensor publish surfaces declare
-        // s2s: {auth_services: ["*"]} deliberately (see
-        // decisions/eventbus-agentsensor-publish-star-is-deliberate-2026-09-01.md),
-        // so a caller with a valid token now reaches BOTH topics' own handlers —
-        // this asserts each RPC is routed to its own topic's handler rather than
-        // being conflated by sharing an rpc name, not that one is denied.
-        ImmutableKey key = newTestKey();
-        Authorizer authorizer = authorizerWithKey(key);
-        Server server = startServer(authorizer, true);
-        try {
-            Status own = call(server, serviceToken(key, "accountingrecord"),
-                    PUBLISH_ACCOUNTING_STREAM, ACCOUNTING_RECORD);
-            assertEquals(Status.Code.UNAVAILABLE, own.getCode(),
-                    "accountingrecord must reach its own topic's handler; got " + own);
-
-            Status other = call(server, serviceToken(key, "accountingrecord"),
-                    PUBLISH_AGENT_SESSION_STREAM, AGENT_SESSION);
-            assertEquals(Status.Code.UNAVAILABLE, other.getCode(),
-                    "accountingrecord must also reach the agentsensor session topic's own "
-                            + "handler (open producer policy), not be conflated with the "
-                            + "accounting topic's handler by sharing an rpc name; got " + other);
-        } finally {
-            shutdown(server);
+    void sameRpcNameOnTwoTopics_policiesStayApart() {
+        Map<String, List<String>> byBareRpc = new HashMap<>();
+        for (ServerServiceDefinition perTopic : TypedEventBusBindings.buildPerTopicLazy(
+                () -> null, () -> null, () -> null, traceId -> { })) {
+            for (ServerMethodDefinition<?, ?> method : perTopic.getMethods()) {
+                String full = method.getMethodDescriptor().getFullMethodName();
+                byBareRpc.computeIfAbsent(MethodDescriptor.extractBareMethodName(full),
+                        bare -> new ArrayList<>()).add(full);
+            }
         }
+        List<List<String>> shared = byBareRpc.values().stream()
+                .filter(fullNames -> fullNames.size() > 1)
+                .toList();
+        assumeFalse(shared.isEmpty(),
+                "fleet declares no two topics sharing a bare rpc name (rpcs: " + byBareRpc.keySet()
+                        + "); the same-rpc-name regression needs such a pair");
+        fail("fleet now carries topics sharing a bare rpc name " + shared
+                + "; write this test's fixture against that pair");
     }
 
     // ---- NEGATIVE CONTROL: the check is what does the rejecting ----
