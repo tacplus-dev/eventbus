@@ -62,6 +62,7 @@ EventBus topics.
 
 ```bash
 just        # generate + compile
+just gates  # generate, check generated output is untracked, build, test
 just clean  # remove build artifacts
 ```
 

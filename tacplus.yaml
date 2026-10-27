@@ -1,3 +1,6 @@
+# The compiler line this repository builds with: the looper runs that line's
+# latest patch (tacplus-dev/tacplus#161).
+tacplus: "2.4"
 language: java
 # pkg kept as copied so the hand-written code keeps compiling; moves with the packages later.
 pkg: com.gitlab.seabeam.controlplane.schematic.services.eventbus
@@ -6,6 +9,15 @@ src: proto
 # eventbus.proto declares a client of kernel.Mint.
 depends:
   - kernel
+# The topic-auth and namespace-stamp tests take their fixture record topic from
+# letsencrypt (LetsEncryptCertBus.stream); a standalone build carries no other
+# service's topics.
+test-depends:
+  - letsencrypt
 header: |
   Copyright (c) 2026 Jody Scott
   SPDX-License-Identifier: Apache-2.0
+# eventbus is the fleet's broker: every service's topics (state fields it
+# annotates, records on its buses) get typed Publish/Subscribe RPCs here, so it
+# generates from every service's state, not only its own and kernel's.
+states: all
