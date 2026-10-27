@@ -6,7 +6,7 @@
 FROM busybox AS setup
 RUN mkdir -p /var/lib/eventbus/data
 
-FROM gcr.io/distroless/java21-debian12
+FROM gcr.io/distroless/java21-debian13
 
 ARG BUILD_DATE
 ARG VCS_REF
