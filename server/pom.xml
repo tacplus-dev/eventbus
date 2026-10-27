@@ -22,21 +22,50 @@
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka_2.13</artifactId>
 			<version>${kafka.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.lz4</groupId>
+					<artifactId>lz4-java</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka-metadata</artifactId>
 			<version>${kafka.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.lz4</groupId>
+					<artifactId>lz4-java</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka-server-common</artifactId>
 			<version>${kafka.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.lz4</groupId>
+					<artifactId>lz4-java</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.kafka</groupId>
 			<artifactId>kafka-server</artifactId>
 			<version>${kafka.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.lz4</groupId>
+					<artifactId>lz4-java</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!-- Replaces the org.lz4:lz4-java excluded above -->
+		<dependency>
+			<groupId>at.yawk.lz4</groupId>
+			<artifactId>lz4-java</artifactId>
 		</dependency>
 		<!-- Protocol Buffers -->
 		<dependency>

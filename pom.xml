@@ -17,7 +17,11 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<protobuf.version>4.36.2</protobuf.version>
 		<grpc.version>1.79.0</grpc.version>
-		<kafka.version>3.9.0</kafka.version>
+		<kafka.version>3.9.2</kafka.version>
+		<netty.version>4.1.139.Final</netty.version>
+		<jackson.version>2.18.12</jackson.version>
+		<zookeeper.version>3.8.7</zookeeper.version>
+		<lz4.version>1.11.4</lz4.version>
 		<snakeyaml.version>2.5</snakeyaml.version>
 		<toml4j.version>0.7.2</toml4j.version>
 		<gson.version>2.13.2</gson.version>
@@ -30,6 +34,35 @@
 	</properties>
 	<dependencyManagement>
 		<dependencies>
+			<!-- Kafka 3.9's transitive netty, jackson, zookeeper and lz4 carry
+			     known advisories (#5): pin the patched releases on the same lines.
+			     gRPC's netty is shaded and unaffected. -->
+			<dependency>
+				<groupId>io.netty</groupId>
+				<artifactId>netty-bom</artifactId>
+				<version>${netty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>com.fasterxml.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>${jackson.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.zookeeper</groupId>
+				<artifactId>zookeeper</artifactId>
+				<version>${zookeeper.version}</version>
+			</dependency>
+			<!-- org.lz4:lz4-java is unmaintained; at.yawk.lz4 is its maintained
+			     fork (the relocation target), same packages. -->
+			<dependency>
+				<groupId>at.yawk.lz4</groupId>
+				<artifactId>lz4-java</artifactId>
+				<version>${lz4.version}</version>
+			</dependency>
 			<dependency>
 				<groupId>com.google.protobuf</groupId>
 				<artifactId>protobuf-java</artifactId>
