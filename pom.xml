@@ -33,6 +33,9 @@
 		<hazelcast.version>5.7.0</hazelcast.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<logback.version>1.5.38</logback.version>
+		<!-- Javalin 7 is on Jetty 12: Jetty 11's HIGH advisories have no fix on
+		     Maven Central (#9). -->
+		<javalin.version>7.2.4</javalin.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -170,7 +173,7 @@
 			<dependency>
 				<groupId>io.javalin</groupId>
 				<artifactId>javalin</artifactId>
-				<version>6.7.0</version>
+				<version>${javalin.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.tomcat</groupId>
