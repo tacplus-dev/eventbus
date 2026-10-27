@@ -1,0 +1,195 @@
+= init
+> Bash gh issue view 2 --repo tacplus-dev/eventbus --comments; ls; cat tacplus.yaml justfile; git log --oneline | head
+< Dockerfile EVENTBUS_PROGRESS.md LICENSE PROVENANCE.md QUESTIONS.md README.md RECORD_EVENT_ARCHITECTURE.md codegen decisions justfile model pom.xml proto server tacplus.yaml # The compiler line this repository builds with: the looper runs that line's # latest patch (tacplus-dev/tacplus#161). tacplus:...
+The issue output didn't print. Let me retry.
+> Bash gh issue view 2 --repo tacplus-dev/eventbus --comments 2>&1; echo "rc=$?"
+< rc=0
+> Bash gh issue view 2 --repo tacplus-dev/eventbus --json title,body,comments,labels,state 2>&1; gh api repos/tacplus-dev/eventbus/issues/2 2>&1 | head -50
+< {"body":"Blocked-by: #1\n\n## What\n\nRelease this service by version, so fleets pin it by release line (tacplus-dev/tacplus#180), not by commit\n(Jody, 2026-10-27).\n\n- **Tags:** `vMAJOR.MINOR.PATCH` on main (and on `release/MAJOR.MINOR` branches for patches to an older\n  line). Start at **`v0.1....
+Blocked-by #1 — check it.
+> Bash gh issue view 1 --repo tacplus-dev/eventbus --json title,body,state,comments,labels 2>&1; gh issue view 180 --repo tacplus-dev/tacplus --json title,body,state 2>&1 | head -60
+< {"body":"Blocked-by: tacplus-dev/tacplus#161\n\n## What\n\nDeclare this repository's tacplus floor: add `tacplus: \"2.4\"` to `tacplus.yaml`, regenerate with tacplus 2.4,\nand make the repository build and pass its gates on it.\n\n## Why\n\nThe repository loopers (github.com/tacplus-dev/looper) run ...
+= thinking_tokens
+= thinking_tokens
+#1 is closed. Now the repo context and whether sibling services already have a release workflow to match.
+> Bash ls -a . .github 2>&1; ls decisions; cat Dockerfile README.md; git tag; git branch -a; gh repo list tacplus-dev --limit 50 2>&1
+< ls: cannot access '.github': No such file or directory .: . .. .dockerignore .git .gitignore .gitlab-ci.yml Dockerfile EVENTBUS_PROGRESS.md LICENSE PROVENANCE.md QUESTIONS.md README.md RECORD_EVENT_ARCHITECTURE.md codegen decisions justfile model pom.xml proto server tacplus.yaml 2026-09-12-missing-...
+Let me see whether any sibling service has already landed its release workflow, to stay consistent.
+> Bash for r in kernel stratum oauth mailbox messaging llmproxy gateway letsencrypt operator opa kmaker blobstore launcher doppelganger tenantecho nsproxy; do echo "== $r: $(gh api repos/tacplus-dev/$r/contents/.github/workflows --jq '.[].name' 2>/dev/null | tr '\n' ' ') tags: $(gh api repos/tacplus-dev/$r...
+= task_started
+= task_notification
+< == kernel: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"} tags:  == stratum: {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"} tags:  == oaut...
+= thinking_tokens
+= thinking_tokens
+llmproxy and nsproxy already released. llmproxy is likely the closest (tacplus service); read its workflows.
+> Bash mkdir -p /tmp/ref && cd /tmp/ref && for f in .github/workflows/release.yml .github/workflows/ci.yml README.md justfile Dockerfile tacplus.yaml; do echo "=== llmproxy/$f"; gh api repos/tacplus-dev/llmproxy/contents/$f --jq .content | base64 -d; done
+< === llmproxy/.github/workflows/release.yml name: release  # On a version tag vX.Y.Z: run the gates on the tag, publish ghcr.io/tacplus-dev/llmproxy:X.Y.Z for linux/amd64 # and linux/arm64, move the line tag X.Y when this is the line's highest release (ci/release-tags.sh), and # create the GitHub rel...
+= thinking_tokens
+= thinking_tokens
+Fetch llmproxy's ci/ scripts (and any tests of them).
+> Bash mkdir -p /tmp/ref/llmproxy-ci; gh api repos/tacplus-dev/llmproxy/contents/ci --jq '.[].path'; for p in $(gh api repos/tacplus-dev/llmproxy/contents/ci --jq '.[] | select(.type=="file") | .path'); do echo "=== $p"; gh api repos/tacplus-dev/llmproxy/contents/$p --jq .content | base64 -d | tee /tmp/ref...
+< ci/release-image.sh ci/release-notes.sh ci/release-tags.sh ci/tacplus.sh === ci/release-image.sh #!/usr/bin/env bash # Assembles the release image (.github/workflows/release.yml) from the Dockerfile, once per architecture, and # publishes the two as one multi-architecture image. # # Usage:  ci/relea...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+Check nsproxy's version (it has released several) and this repo's Actions setup/secrets.
+> Bash gh api repos/tacplus-dev/nsproxy/contents/ci --jq '.[].path' 2>&1; gh api repos/tacplus-dev/nsproxy/contents/.github/workflows/release.yml --jq .content | base64 -d | head -40; echo ===; gh api repos/tacplus-dev/llmproxy/contents/tests/release.rs --jq .content | base64 -d; echo ===; gh secret list -...
+< {"message":"Not Found","documentation_url":"https://docs.github.com/rest/repos/contents#get-repository-content","status":"404"}gh: Not Found (HTTP 404) name: release  # On a version tag vX.Y.Z: run the gates on the tag, publish ghcr.io/tacplus-dev/nsproxy:X.Y.Z for linux/amd64 # and linux/arm64, mov...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+The key risk for this repo: `tacplus build` here resolves `depends: kernel` / `test-depends: letsencrypt` and the registry, all private. Let me see how tacplus fetches them.
+> Bash which tacplus; cat $(which tacplus) 2>/dev/null | head -60; ls ~/.cache 2>/dev/null; ls -a ~ 
+< /usr/local/bin/tacplus #!/usr/bin/env bash # Copyright (c) 2026 Jody Scott # SPDX-License-Identifier: Apache-2.0 # # tacplus, as the looper image provides it: not a binary, but the tacplus # compiler image for this repository's MAJOR.MINOR floor, always at that # line's latest patch (Jody 2026-10-26...
+> Bash echo $LOOPER_WORK; c="${LOOPER_WORK:-/work}/.tacplus-home"; ls -la $c; cat $c/.gitconfig 2>/dev/null; find $c -maxdepth 4 -type d | head -30
+< /builds/looper total 24 drwxr-xr-x  5 root root 4096 Oct 27 15:51 . drwxr-xr-x 15 root root 4096 Oct 27 16:24 .. drwxr-xr-x  3 root root 4096 Oct 27 14:56 .cache drwxr-xr-x  3 root root 4096 Oct 27 15:39 .config -rw-r--r--  1 root root  157 Oct 27 15:15 .gitconfig drwxr-xr-x  3 root root 4096 Oct 27...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+> Bash gh api repos/tacplus-dev/eventbus --jq '.permissions'; gh secret list --repo tacplus-dev/eventbus; echo "rc=$?"; gh search issues --owner tacplus-dev "Release: tag" --json repository,number,state,title --limit 40 2>&1 | head -60
+< {"admin":true,"maintain":true,"pull":true,"push":true,"triage":true} rc=0 [{"number":7,"repository":{"name":"kernel","nameWithOwner":"tacplus-dev/kernel"},"state":"open","title":"Release: tag vMAJOR.MINOR.PATCH (start at v0.1.0) and publish its image"},{"number":2,"repository":{"name":"doppelganger"...
+= thinking_tokens
+= thinking_tokens
+No secrets on this repo. llmproxy's issue #5 is still open even though v0.1.0 is tagged. Check its comments, and kernel #7's, for how private dependencies in CI were handled.
+> Bash for x in llmproxy/5 kernel/7 nsproxy/3; do echo "######## $x"; gh issue view ${x#*/} --repo tacplus-dev/${x%/*} --json comments,labels --jq '.labels[].name, (.comments[] | "--- " + .author.login + " " + .createdAt + "\n" + .body)' | head -80; done
+< ######## llmproxy/5 approved looper:in-progress --- jodydadescott 2026-10-27T15:41:41Z Reopened: 88832b6 closed this through its message, but the release itself (v0.1.0 published, dry run of v0.1.1) is still to be done and verified. ######## kernel/7 approved ######## nsproxy/3 approved --- jodydade...
+= thinking_tokens
+= thinking_tokens
+Neither prior release had private dependencies. Did llmproxy's CI (which runs `tacplus build` in Actions with no credentials) succeed? That shows whether the private registry is reachable there.
+> Bash gh run list --repo tacplus-dev/llmproxy --limit 8 2>&1; 
+< in_progress		release	release	main	workflow_dispatch	40540174615	4m40s	2026-10-27T16:21:54Z completed	success	ci: install protoc, which prost-wkt-types' build script runs	release	v0.1.0	push	40537142097	17m41s	2026-10-27T16:03:33Z completed	success	release	release	main	workflow_dispatch	40533871480	1...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+Simplest test: run the compiler image the way CI would, with a fresh HOME and no token, and see whether it can resolve kernel/letsencrypt.
+> Bash cd /builds/looper/eventbus/checkout; rm -rf /builds/looper/ci-sim && mkdir -p /builds/looper/ci-sim/home && git worktree add -q /builds/looper/ci-sim/wt HEAD && cd /builds/looper/ci-sim/wt && timeout 600 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/builds/looper/ci-sim/home -e GIT_TERMINAL_PROMPT...
+< 2026-10-27T16:26:42.197Z	INFO	using --tag 'latest' — building from HEAD, version set to 0.0.0-SNAPSHOT 2026-10-27T16:26:42.197Z	INFO	loaded registry	{"path": "/builds/looper/ci-sim/wt/proto/registry.yaml", "services": 1, "vservices": 0} 2026-10-27T16:26:42.197Z	INFO	cloning proto source (first run)	...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+> Bash cd /builds/looper/eventbus/checkout; git worktree remove --force /builds/looper/ci-sim/wt; rm -rf /builds/looper/ci-sim; grep -n -i -E "<repositor|<url>|gitlab|antrun|tacplus" pom.xml */pom.xml | head -40; ls model codegen server; cat .dockerignore .gitignore
+< pom.xml:4:	<groupId>com.gitlab.seabeam.controlplane.schematic.services.eventbus</groupId> pom.xml:31:	<repositories> pom.xml:32:		<repository> pom.xml:33:			<id>gitlab-maven</id> pom.xml:34:			<url>https://gitlab.com/api/v4/groups/131730651/-/packages/maven</url> pom.xml:38:		<repository> pom.xml:39...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+> Bash gh search code --owner tacplus-dev "secrets." --json repository,path --limit 30 2>&1 | head; gh api 'search/code?q=org:tacplus-dev+GH_APP+OR+create-github-app-token+OR+TACPLUS_READ' --jq '.items[] | .repository.name+" "+.path' 2>&1 | head; gh api repos/tacplus-dev/roadmap/contents --jq '.[].path' 2>...
+< [] README.md decisions items
+> Bash gh api repos/tacplus-dev/roadmap/contents/decisions --jq '.[].name' | grep -i -E "ci|credential|token|secret|release|github|private|action" ; gh api repos/tacplus-dev/roadmap/contents/items --jq '.[].name' | grep -i -E "ci|credential|token|secret|release|private|action"
+< identity-session-credential-2026-10-25.md tenant-owned-services-decisions-2026-09-08.md stratum-transactions.md
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+> Bash cat > /tmp/issue2-comment.md <<'EOF' **Needs a decision before I can do this: how release CI reads the private tacplus-dev repos.**  The release workflow has to run `tacplus build` on the tag. Here that resolves `depends: kernel`, `test-depends: letsencrypt`, the registry, and, through `states: all`...
+< https://github.com/tacplus-dev/eventbus/issues/2#issuecomment-6447480141 https://github.com/tacplus-dev/eventbus/issues/2
+> Bash git status --short && /usr/local/bin/repo-looper --repo eventbus --issue 2 --checkpoint "Stopped on needs-decision: release CI can't clone private tacplus-dev repos (registry, kernel, letsencrypt, states: all) without a credential; recommended an org GitHub App with contents:read as org Actions secr...
+< remote:      https://github.com/tacplus-dev/eventbus/pull/new/looper/eventbus-2         remote:  [2026-10-27T16:27:40Z] checkpoint of #2 (a step) pushed to looper/eventbus-2:  2 files changed, 216 insertions(+)
+I stopped issue #2 without committing anything: the release workflow can't run here until someone gives GitHub Actions a credential to read the org's private repos. I've labelled the issue `needs-decision` and left it open.
+
+**Why it's blocked:** release CI has to run `tacplus build` on the tag. In this repo that means cloning `tacplus-dev/registry`, `kernel`, `letsencrypt` and, because of `states: all`, every service's protos, and most of those repos are private. An Actions runner only has this repo's own `GITHUB_TOKEN`, which can't read them. I ran the build the way CI would (the `tacplus:2.4` image, a fresh home directory, no token). It fails on the first clone, the registry: `could not read Username for 'https://github.com'`. nsproxy and llmproxy got through their releases because neither has private dependencies. This repo has no Actions secrets, and nothing in the roadmap's decision records covers CI credentials.
+
+**What I asked for** ([issue comment](https://github.com/tacplus-dev/eventbus/issues/2#issuecomment-6447480141)): a GitHub App owned by tacplus-dev with read-only access to repo contents, stored as org-level Actions secrets. The workflow would turn that into a short-lived token for each build. A fine-grained personal token with read access is the simpler alternative, but it expires and belongs to one person. I advised against reusing the looper's token because it has write access. Creating either needs an org owner, but I can wire a repo secret once it exists. The other private services with dependencies (kernel#7, letsencrypt#3, gateway#6, …) will hit the same wall, which is why I suggested making it an org decision.
+
+**Ready once the credential exists:** the rest would follow llmproxy's setup. That means two release scripts (which image tags a version gets, and the release notes) with a JUnit test against sample repos, a CI workflow, and a release workflow building for amd64 and arm64 with a dry-run mode. It also needs a "Releasing" section in the README, the `v0.1.0` tag, and a dry run of `v0.1.1`.
+
+I saved a checkpoint to `looper/eventbus-2` that says what's done and what's left, so the next run can start from there.
+= success: I stopped issue #2 without committing anything: the release workflow can't run here until someone gives GitHub Actions a credential to read the org's private repos. I've labelled the issue `needs-decision` and left it open.
+
+**Why it's blocked:** release CI has to run `tacplus build` on the tag. In this repo that means cloning `tacplus-dev/registry`, `kernel`, `letsencrypt` and, because of `states: all`, every service's protos, and most of those repos are private. An Actions runner only has this repo's own `GITHUB_TOKEN`, which can't read them. I ran the build the way CI would (the `tacplus:2.4` image, a fresh home directory, no token). It fails on the first clone, the registry: `could not read Username for 'https://github.com'`. nsproxy and llmproxy got through their releases because neither has private dependencies. This repo has no Actions secrets, and nothing in the roadmap's decision records covers CI credentials.
+
+**What I asked for** ([issue comment](https://github.com/tacplus-dev/eventbus/issues/2#issuecomment-6447480141)): a GitHub App owned by tacplus-dev with read-only access to repo contents, stored as org-level Actions secrets. The workflow would turn that into a short-lived token for each build. A fine-grained personal token with read access is the simpler alternative, but it expires and belongs to one person. I advised against reusing the looper's token because it has write access. Creating either needs an org owner, but I can wire a repo secret once it exists. The other private services with dependencies (kernel#7, letsencrypt#3, gateway#6, …) will hit the same wall, which is why I suggested making it an org decision.
+
+**Ready once the credential exists:** the rest would follow llmproxy's setup. That means two release scripts (which image tags a version gets, and the release notes) with a JUnit test against sample repos, a CI workflow, and a release workflow building for amd64 and arm64 with a dry-run mode. It also needs a "Releasing" section in the README, the `v0.1.0` tag, and a dry run of `v0.1.1`.
+
+I saved a checkpoint to `looper/eventbus-2` that says what's done and what's left, so the next run can start from there.
