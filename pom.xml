@@ -30,7 +30,7 @@
 		<maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<exec-plugin.version>3.5.0</exec-plugin.version>
-		<hazelcast.version>5.5.0</hazelcast.version>
+		<hazelcast.version>5.7.0</hazelcast.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 	</properties>
 	<dependencyManagement>

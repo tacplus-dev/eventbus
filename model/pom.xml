@@ -240,7 +240,7 @@
 		</plugins>
 	</build>
 	<properties><tacplus.bin>tacplus</tacplus.bin>
-		<hazelcast.version>5.5.0</hazelcast.version>
+		<hazelcast.version>5.7.0</hazelcast.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<exec-plugin.version>3.5.0</exec-plugin.version>
 		<maven.compiler.release>21</maven.compiler.release>
