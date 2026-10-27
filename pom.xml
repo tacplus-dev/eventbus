@@ -32,6 +32,7 @@
 		<exec-plugin.version>3.5.0</exec-plugin.version>
 		<hazelcast.version>5.7.0</hazelcast.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
+		<logback.version>1.5.38</logback.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -159,12 +160,12 @@
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-classic</artifactId>
-				<version>1.5.29</version>
+				<version>${logback.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-core</artifactId>
-				<version>1.5.29</version>
+				<version>${logback.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>io.javalin</groupId>
