@@ -4,3 +4,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 `- <YYYY-MM-DD> <who: looper|agent|jody> <kind: issue|decision|release|deploy> <one line> (<links>)`
 
 - 2026-10-27 looper issue Jetty 11.0.25 (via Javalin 6.7.0) has HIGH advisories with no public Jetty 11 fix: move to Javalin 7 / Jetty 12 (#9, 325f31b)
+- 2026-10-27 looper issue No gates: the justfile has no `gates` recipe, so `just gates` fails on main (#10, e8cd5e2)
