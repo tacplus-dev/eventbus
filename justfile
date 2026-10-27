@@ -1,4 +1,5 @@
-# Local development builds only — not used in CI/CD.
+# Local development builds, and `just gates`: the checks the looper and the
+# nightly scanner run before and after every change to main.
 
 TACPLUS := env_var_or_default("TACPLUS_BIN", "tacplus")
 
