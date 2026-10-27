@@ -31,6 +31,7 @@
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<exec-plugin.version>3.5.0</exec-plugin.version>
 		<hazelcast.version>5.5.0</hazelcast.version>
+		<bouncycastle.version>1.86</bouncycastle.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -133,15 +134,22 @@
 				<artifactId>junit-jupiter</artifactId>
 				<version>${junit.version}</version>
 			</dependency>
+			<!-- Bouncy Castle before 1.85 has known advisories (#6). bcutil comes
+			     in through bcpkix: keep all three on one release. -->
 			<dependency>
 				<groupId>org.bouncycastle</groupId>
 				<artifactId>bcprov-jdk18on</artifactId>
-				<version>1.80</version>
+				<version>${bouncycastle.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.bouncycastle</groupId>
 				<artifactId>bcpkix-jdk18on</artifactId>
-				<version>1.80</version>
+				<version>${bouncycastle.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.bouncycastle</groupId>
+				<artifactId>bcutil-jdk18on</artifactId>
+				<version>${bouncycastle.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>org.slf4j</groupId>
