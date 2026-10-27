@@ -2,8 +2,9 @@
 # latest patch (tacplus-dev/tacplus#161).
 tacplus: "2.4"
 language: java
-# pkg kept as copied so the hand-written code keeps compiling; moves with the packages later.
-pkg: com.gitlab.seabeam.controlplane.schematic.services.eventbus
+# The Java package of the generated model (<pkg>.model) and of the hand-written
+# server and codegen, following the module path github.com/tacplus-dev/eventbus.
+pkg: com.github.tacplusdev.eventbus
 output-dir: model/target/generated-sources
 src: proto
 # eventbus.proto declares a client of kernel.Mint.

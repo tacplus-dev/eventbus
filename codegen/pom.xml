@@ -3,7 +3,7 @@
                              http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<parent>
-		<groupId>com.gitlab.seabeam.controlplane.schematic.services.eventbus</groupId>
+		<groupId>com.github.tacplusdev.eventbus</groupId>
 		<artifactId>eventbus-parent</artifactId>
 		<version>1.2.0-SNAPSHOT</version>
 	</parent>

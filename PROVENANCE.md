@@ -11,3 +11,15 @@ eventbus oauth"*. The private copy runs the launch fleet unchanged; new-design c
 
 Divergences: headers in tacplus.yaml (Jody Scott, Apache-2.0; LICENSE added); `src: proto` (this repo
 holds the service's own proto); `proto/registry.yaml` is a lock of github.com/tacplus-dev/registry.
+
+2026-10-27, no SeaBeam (#4): tacplus-dev works by itself, so nothing outside this note and dated records
+names SeaBeam. The eventbus proto is this repository's own (`proto/services/eventbus.proto`), not vendored or
+fetched: its contract in the registry lock is `github.com/tacplus-dev/eventbus`, and kernel, letsencrypt and
+their depends come from their tacplus-dev homes through the registry. The Java package of the server, the
+codegen plugin and the generated model (`pkg`), and the Maven groupId, are `com.github.tacplusdev.eventbus`
+(was `com.gitlab.seabeam.controlplane.schematic.services.eventbus`; the codegen was
+`com.gitlab.seabeam.controlplane.schematic.codegen`). Removed: `.gitlab-ci.yml` (SeaBeam's GitLab pipeline
+and registry; release CI is #2), the GitLab Maven package repository and distributionManagement in the POMs,
+and the GitLab project id and Rust interfaces crate in `proto/dependencies.yaml` (tacplus still requires
+`registry.imports.java` for a Java build, now `com.github.tacplusdev.kernel`). Source headers and image labels
+name Jody Scott and tacplus.dev; comments no longer cite SeaBeam's products.

@@ -30,7 +30,7 @@
     <logger name="io.grpc.netty.shaded.io.grpc.netty" level="INFO" />
 
     <!-- Application loggers at INFO -->
-    <logger name="com.gitlab.seabeam" level="INFO" />
+    <logger name="com.github.tacplusdev" level="INFO" />
 
     <root level="INFO">
         <appender-ref ref="STDOUT" />
