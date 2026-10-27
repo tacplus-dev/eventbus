@@ -14,5 +14,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   called. Health runs over gRPC. Javalin brings in about 20 Jetty 12 jars, which nothing here serves, and
   each Jetty advisory means another bump. Removing it is a change in tacplus (the Java generator), after
   which `eventbus-model` could drop the dependency.
+- **More checks in `just gates`** (2026-10-27, #10): the gates are generate (leaving tracked files as they
+  were), check-generated, build and the tests. #10 asked whether a dependency advisory scan (OSV, as run
+  by hand for #9) and a format/lint check should also be gates. The tag-only `.gitlab-ci.yml` it cites is
+  gone; the release CI is #2. An OSV gate would fail main whenever an advisory is published, so it needs
+  a decision on whether a new advisory should block unrelated changes.
 
 ## Promoted / declined
