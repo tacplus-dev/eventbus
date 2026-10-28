@@ -4,11 +4,6 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
-- **snappy-java 1.1.10.9** (2026-10-27, #9): the OSV scan run for #9 found advisories
-  published on 2026-10-27: snappy-java 1.1.10.5 (via kafka-clients 3.9.2) has GHSA-gwq9-9ffj-mvrv
-  and GHSA-q233-g92q-qxp6 (HIGH) plus GHSA-xqrx-qh46-34m7 (MODERATE), all fixed in 1.1.10.9. Pin it in the
-  parent's dependencyManagement, as #5 did for Kafka's transitive dependencies. Issue: #13. (The guava half,
-  GHSA-xxph-c9ww-hj94, was pinned to 33.7.2-android in #12.)
 - **plexus-utils 3.6.1 in codegen** (2026-10-28, #12): the OSV scan of the resolved tree for #12 reports
   plexus-utils 3.5.1 (provided, via codegen's Maven plugin API dependencies) with GHSA-6fmv-xxpf-w3cw (HIGH,
   directory traversal in `extractFile`, fixed 3.6.1). It is build-time only and not in the server image, so

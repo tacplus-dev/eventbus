@@ -22,6 +22,7 @@
 		<jackson.version>2.18.12</jackson.version>
 		<zookeeper.version>3.8.7</zookeeper.version>
 		<lz4.version>1.11.4</lz4.version>
+		<snappy.version>1.1.10.12</snappy.version>
 		<guava.version>33.7.2-android</guava.version>
 		<snakeyaml.version>2.5</snakeyaml.version>
 		<toml4j.version>0.7.2</toml4j.version>
@@ -68,6 +69,14 @@
 				<groupId>at.yawk.lz4</groupId>
 				<artifactId>lz4-java</artifactId>
 				<version>${lz4.version}</version>
+			</dependency>
+			<!-- kafka-clients 3.9.2 brings snappy-java 1.1.10.5, which has
+			     GHSA-gwq9-9ffj-mvrv, GHSA-q233-g92q-qxp6 (HIGH) and
+			     GHSA-xqrx-qh46-34m7 (#13): pin the latest patch on the 1.1.10 line. -->
+			<dependency>
+				<groupId>org.xerial.snappy</groupId>
+				<artifactId>snappy-java</artifactId>
+				<version>${snappy.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.google.protobuf</groupId>
