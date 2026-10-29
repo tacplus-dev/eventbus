@@ -13,6 +13,8 @@ the looper then marks it `promoted` or `declined` here with the date.
   directory traversal in `extractFile`, fixed 3.6.1). It is build-time only and not in the server image, so
   the risk is low, but the nightly scan will keep reporting it: pin 3.6.1 in dependencyManagement or bump
   the Maven API dependency that brings it. Needs its own issue.
+  **Fixed** 2026-10-29 (#16): codegen's `maven-plugin-api` is bumped to 3.9.16, which brings plexus-utils
+  3.6.1; the OSV scan of every module's resolved tree reports no advisories.
 - **Drop Javalin from the generated Java libraries** (2026-10-27, #9): `GrpcServer` declares a `Javalin
   httpServer` that it never assigns or starts, and `ServiceImplementation.registerRESTEndpoints` is never
   called. Health runs over gRPC. Javalin brings in about 20 Jetty 12 jars, which nothing here serves, and
