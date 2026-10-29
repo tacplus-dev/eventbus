@@ -1,6 +1,6 @@
 # The compiler line this repository builds with: the looper runs that line's
 # latest patch (tacplus-dev/tacplus#161).
-tacplus: "2.4"
+tacplus: "2.5"
 language: java
 # The Java package of the generated model (<pkg>.model) and of the hand-written
 # server and codegen, following the module path github.com/tacplus-dev/eventbus.
