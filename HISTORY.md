@@ -9,3 +9,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-10-28 looper issue guava 33.5.0-android (via grpc-protobuf) has a HIGH advisory (GHSA-xxph-c9ww-hj94): pin 33.7.2-android (#12, ea38520)
 - 2026-10-28 looper issue snappy-java 1.1.10.5 (via kafka-clients 3.9.2) has 2 HIGH + 1 MODERATE advisories: pin 1.1.10.12 (#13, 8453887)
 - 2026-10-29 looper issue Gates fail on main: stratum now needs tacplus 2.5; move the tacplus floor from 2.4 to 2.5 (#15, 5d7c330)
+- 2026-10-29 looper issue plexus-utils 3.5.1 (via maven-plugin-api 3.9.9 in codegen) has a HIGH advisory (GHSA-6fmv-xxpf-w3cw): bump maven-plugin-api to 3.9.16 (#16, 4881d2f)
