@@ -10,3 +10,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-10-28 looper issue snappy-java 1.1.10.5 (via kafka-clients 3.9.2) has 2 HIGH + 1 MODERATE advisories: pin 1.1.10.12 (#13, 8453887)
 - 2026-10-29 looper issue Gates fail on main: stratum now needs tacplus 2.5; move the tacplus floor from 2.4 to 2.5 (#15, 5d7c330)
 - 2026-10-29 looper issue plexus-utils 3.5.1 (via maven-plugin-api 3.9.9 in codegen) has a HIGH advisory (GHSA-6fmv-xxpf-w3cw): bump maven-plugin-api to 3.9.16 (#16, 4881d2f)
+- 2026-10-31 looper issue server/ and codegen/ justfiles pin the retired tacplus 2.0.2 image (floor is 2.5): the recipes fail with 'manifest unknown' (#17, 1bde5cd)
