@@ -8,6 +8,7 @@ the looper then marks it `promoted` or `declined` here with the date.
   Maven inside `ghcr.io/tacplus-dev/tacplus/tacplus:2.0.2`, while the floor is now 2.5 and the top-level
   `just build`/`just gates` build on the host. Either point them at the floor line (or the `tacplus`
   wrapper's image) or drop them in favour of the top-level recipes, so there is one way to build.
+  **Fixed** 2026-10-31 (#17): both are deleted; the top-level justfile is the only build entry point.
 - **plexus-utils 3.6.1 in codegen** (2026-10-28, #12): the OSV scan of the resolved tree for #12 reports
   plexus-utils 3.5.1 (provided, via codegen's Maven plugin API dependencies) with GHSA-6fmv-xxpf-w3cw (HIGH,
   directory traversal in `extractFile`, fixed 3.6.1). It is build-time only and not in the server image, so

@@ -66,6 +66,8 @@ just gates  # generate, check generated output is untracked, build, test
 just clean  # remove build artifacts
 ```
 
+The top-level justfile is the only build entry point; the modules have no justfiles of their own.
+
 ## Proto
 
 [`services/eventbus.proto`](../../proto/services/eventbus.proto)
