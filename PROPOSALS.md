@@ -4,6 +4,12 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Drop the shade plexus-utils override** (2026-11-02, #18): `pom.xml`'s `<pluginManagement>` overrides
+  maven-shade-plugin's plexus-utils to 3.6.1 (GHSA-6fmv-xxpf-w3cw; shade 3.6.1 asks for 3.5.1, 3.6.2 for
+  3.6.0), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
+  (tacplus-dev/fleet-dev#17). Remove it once a shade release asks for plexus-utils 3.6.1 or later and
+  fleet-dev pins it. The OSV scan of the resolved trees does not see plugin realms: `mvn -X package`
+  (`Populating class realm plugin>...maven-shade-plugin`) does.
 - **Stale tacplus image in `server/justfile` and `codegen/justfile`** (2026-10-29, #15): both still run
   Maven inside `ghcr.io/tacplus-dev/tacplus/tacplus:2.0.2`, while the floor is now 2.5 and the top-level
   `just build`/`just gates` build on the host. Either point them at the floor line (or the `tacplus`
