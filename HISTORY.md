@@ -12,3 +12,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-10-29 looper issue plexus-utils 3.5.1 (via maven-plugin-api 3.9.9 in codegen) has a HIGH advisory (GHSA-6fmv-xxpf-w3cw): bump maven-plugin-api to 3.9.16 (#16, 4881d2f)
 - 2026-10-31 looper issue server/ and codegen/ justfiles pin the retired tacplus 2.0.2 image (floor is 2.5): the recipes fail with 'manifest unknown' (#17, 1bde5cd)
 - 2026-11-02 looper issue maven-shade-plugin 3.6.1 runs on plexus-utils 3.5.1 (GHSA-6fmv-xxpf-w3cw, HIGH): override it to 3.6.1 (#18, 0d0bf9b)
+- 2026-11-03 looper issue PublishHandler: no test that the inbound trace_id reaches the Kafka record, and untraced messages inherit an earlier trace_id (#19, 8d4b741)
