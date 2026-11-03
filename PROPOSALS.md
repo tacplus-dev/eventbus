@@ -4,6 +4,11 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **`looper-trace check` does not read Java** (2026-11-03, #19): it reports "not checked: 41 Java files"
+  and passes with 0 handlers, so every eventbus handler's trace propagation (tacplus-dev/looper#51) rests
+  on reading it by hand. `PublishHandler` (the only handler whose requests carry field 200) is now covered
+  by `PublishTraceIdTest`; any new handler or causal call is not caught by the tool. Java support belongs
+  in tacplus-dev/looper, not here.
 - **Drop the shade plexus-utils override** (2026-11-02, #18): `pom.xml`'s `<pluginManagement>` overrides
   maven-shade-plugin's plexus-utils to 3.6.1 (GHSA-6fmv-xxpf-w3cw; shade 3.6.1 asks for 3.5.1, 3.6.2 for
   3.6.0), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)

@@ -298,13 +298,15 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
             }
         }
 
-        // Extract and propagate trace_id from field 200 before stamping.
+        // Extract and propagate trace_id from field 200 before stamping. The
+        // record's headers are built per message: callerHeaders is shared by
+        // the whole stream, and a trace_id written into it would ride on every
+        // later untraced message as well.
+        Map<String, String> recordHeaders = new LinkedHashMap<>(callerHeaders);
         if (traceIdExtractor != null) {
             String traceId = traceIdExtractor.apply(message);
             if (traceId != null && !traceId.isEmpty()) {
-                synchronized (callerHeaders) {
-                    callerHeaders.put("trace_id", traceId);
-                }
+                recordHeaders.put("trace_id", traceId);
                 if (traceDispatcher != null) {
                     traceDispatcher.accept(traceId);
                 }
@@ -369,7 +371,7 @@ public class PublishHandler<T extends MessageLite> implements StreamObserver<T> 
         inFlight.incrementAndGet();
         java.util.concurrent.CompletableFuture<org.apache.kafka.clients.producer.RecordMetadata> pub;
         try {
-            pub = publisher.publish(kafkaTopic, null, callerHeaders, bytes);
+            pub = publisher.publish(kafkaTopic, null, recordHeaders, bytes);
         } catch (Throwable t) {
             // Defense in depth — KafkaPublisher.publish already wraps producer.send,
             // but if anything throws before the future is returned the inFlight
