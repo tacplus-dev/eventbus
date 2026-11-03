@@ -180,7 +180,6 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>build-helper-maven-plugin</artifactId>
-				<version>3.6.0</version>
 				<executions>
 					<execution>
 						<id>add-source</id>
@@ -251,7 +250,6 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>exec-maven-plugin</artifactId>
-				<version>${exec-plugin.version}</version>
 			</plugin>
 		</plugins>
 	</build>

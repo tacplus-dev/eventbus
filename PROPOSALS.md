@@ -9,6 +9,15 @@ the looper then marks it `promoted` or `declined` here with the date.
   on reading it by hand. `PublishHandler` (the only handler whose requests carry field 200) is now covered
   by `PublishTraceIdTest`; any new handler or causal call is not caught by the tool. Java support belongs
   in tacplus-dev/looper, not here.
+- **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
+  maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
+  for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
+  (tacplus-dev/fleet-dev#18). Remove it once an antrun release asks for 4.0.3 or later and fleet-dev pins it.
+- **Fixed Kafka ports in server tests** (2026-11-03, #20): the server tests' embedded brokers bind
+  fixed ports, and `KafkaEmbeddedBroker` adds 10000 for the LOCAL listener, so `ReplayIntegrationTest`'s
+  LOCAL listener (29092 + 10000) is `ConsumerGroupStarvationTest`'s broker port (39092). It failed with
+  `Address already in use` while another worktree's gates ran on this machine. Concurrent looper runs make
+  the server tests flaky; ephemeral ports (bind 0, read back the bound port) would let gates run side by side.
 - **Drop the shade plexus-utils override** (2026-11-02, #18): `pom.xml`'s `<pluginManagement>` overrides
   maven-shade-plugin's plexus-utils to 3.6.1 (GHSA-6fmv-xxpf-w3cw; shade 3.6.1 asks for 3.5.1, 3.6.2 for
   3.6.0), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)

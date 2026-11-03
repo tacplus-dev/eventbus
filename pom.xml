@@ -31,7 +31,7 @@
 		<junit.version>6.0.2</junit.version>
 		<maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
-		<exec-plugin.version>3.5.0</exec-plugin.version>
+		<exec-plugin.version>3.6.4</exec-plugin.version>
 		<hazelcast.version>5.7.0</hazelcast.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<logback.version>1.5.38</logback.version>
@@ -241,6 +241,25 @@
 					<groupId>org.codehaus.mojo</groupId>
 					<artifactId>exec-maven-plugin</artifactId>
 					<version>${exec-plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>build-helper-maven-plugin</artifactId>
+					<version>3.6.2</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-antrun-plugin</artifactId>
+					<version>3.2.0</version>
+					<dependencies>
+						<!-- GHSA-6fmv-xxpf-w3cw: antrun 3.2.0 asks for plexus-utils 4.0.2 (fleet-dev docs/java-plugins.md, #20).
+						     Drop it once an antrun release asks for 4.0.3 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>4.0.3</version>
+						</dependency>
+					</dependencies>
 				</plugin>
 			</plugins>
 		</pluginManagement>

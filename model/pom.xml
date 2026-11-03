@@ -192,12 +192,10 @@
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>exec-maven-plugin</artifactId>
-				<version>${exec-plugin.version}</version>
 			</plugin>
 			<plugin>
 				<groupId>org.codehaus.mojo</groupId>
 				<artifactId>build-helper-maven-plugin</artifactId>
-				<version>3.6.0</version>
 				<executions>
 					<execution>
 						<id>add-source</id>
@@ -216,7 +214,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-antrun-plugin</artifactId>
-				<version>3.1.0</version>
 				<executions>
 					<execution>
 						<id>tacplus-build</id>
@@ -242,7 +239,6 @@
 	<properties><tacplus.bin>tacplus</tacplus.bin>
 		<hazelcast.version>5.7.0</hazelcast.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
-		<exec-plugin.version>3.5.0</exec-plugin.version>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<protobuf.version>4.36.2</protobuf.version>
