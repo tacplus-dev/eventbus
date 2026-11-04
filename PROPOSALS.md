@@ -4,6 +4,12 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Scan the built jar in the gates** (2026-11-04, #21): the OSV check of the resolved Maven trees reports 0
+  advisories, yet `trivy rootfs server/target/event-bus.jar` finds 8 HIGH in jackson 2.21.2 / 3.1.2 shaded inside
+  Hazelcast, which no pom tree lists. stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;
+  tacplus-dev/stratum#28). The same recipe here would catch shaded copies on every change. Like the OSV gate in
+  "More checks in `just gates`" below, it would turn main red when a new advisory is published, so it needs the
+  same decision.
 - **`looper-trace check` does not read Java** (2026-11-03, #19): it reports "not checked: 41 Java files"
   and passes with 0 handlers, so every eventbus handler's trace propagation (tacplus-dev/looper#51) rests
   on reading it by hand. `PublishHandler` (the only handler whose requests carry field 200) is now covered
