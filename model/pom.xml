@@ -41,11 +41,6 @@
 			<groupId>javax.annotation</groupId>
 			<artifactId>javax.annotation-api</artifactId>
 		<version>1.3.2</version></dependency>
-		<!-- Hazelcast -->
-		<dependency>
-			<groupId>com.hazelcast</groupId>
-			<artifactId>hazelcast</artifactId>
-		<version>${hazelcast.version}</version></dependency>
 		<!-- JWT -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
@@ -237,7 +232,6 @@
 		</plugins>
 	</build>
 	<properties><tacplus.bin>tacplus</tacplus.bin>
-		<hazelcast.version>5.7.0</hazelcast.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

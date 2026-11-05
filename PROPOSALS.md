@@ -18,7 +18,7 @@ the looper then marks it `promoted` or `declined` here with the date.
   Moving here would also mean `maven.compiler.release` 25 and a test run on JDK 25.
 - **Scan the built jar in the gates** (2026-11-04, #21): the OSV check of the resolved Maven trees reports 0
   advisories, yet `trivy rootfs server/target/event-bus.jar` finds 8 HIGH in jackson 2.21.2 / 3.1.2 shaded inside
-  Hazelcast, which no pom tree lists. stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;
+  Hazelcast, which no pom tree lists (#21 dropped Hazelcast, which nothing used; the jar now scans clean). stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;
   tacplus-dev/stratum#28). The same recipe here would catch shaded copies on every change. Like the OSV gate in
   "More checks in `just gates`" below, it would turn main red when a new advisory is published, so it needs the
   same decision.
