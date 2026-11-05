@@ -17,3 +17,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-05 looper issue Hazelcast 5.7.0 shades jackson 2.21.2 and 3.1.2 (8 HIGH advisories) into event-bus.jar, and nothing in eventbus uses Hazelcast: drop the dependency (#21, 2b199ee)
 - 2026-11-05 looper issue maven-jar-plugin 3.5.0 and maven-plugin-plugin 3.15.1 load aircompressor 0.27 (GHSA-vx9q-rhv9-3jvg, HIGH): override plexus-archiver to 4.15.0 (#23, 6f180f3)
 - 2026-11-05 looper issue Gates flake: KafkaIntegrationTest.topicManager_deleteTopic fails when TopicManager.listTopics describes a just-deleted topic (#24, 3125719)
+- 2026-11-05 looper issue maven-compiler-plugin 3.15.0, resources, jar, plugin-plugin, protobuf and os-maven-plugin realms load plexus-utils (GHSA-6fmv-xxpf-w3cw) and commons-io 2.11.0 (GHSA-78wr-2p64-hpwj), both HIGH: bump compiler to 3.16.0 and override the rest (#22, c786bbb)
