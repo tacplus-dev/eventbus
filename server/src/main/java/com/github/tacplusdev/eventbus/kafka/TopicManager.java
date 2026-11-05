@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public class TopicManager implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(TopicManager.class);
-    private final AdminClient admin;
+    private final Admin admin;
     private final int defaultPartitions;
     private final int defaultReplicationFactor;
     private final long defaultRetentionMs;
@@ -32,12 +32,22 @@ public class TopicManager implements AutoCloseable {
 
     public TopicManager(String bootstrapServers, int defaultPartitions,
                         int defaultReplicationFactor, int defaultRetentionHours) {
-        Properties props = new Properties();
-        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        this.admin = AdminClient.create(props);
+        this(createAdmin(bootstrapServers), defaultPartitions, defaultReplicationFactor, defaultRetentionHours);
+    }
+
+    /** Over a given admin client, which close() closes: tests put one in front of a real broker. */
+    TopicManager(Admin admin, int defaultPartitions,
+                 int defaultReplicationFactor, int defaultRetentionHours) {
+        this.admin = admin;
         this.defaultPartitions = defaultPartitions;
         this.defaultReplicationFactor = defaultReplicationFactor;
         this.defaultRetentionMs = defaultRetentionHours * 3600L * 1000L;
+    }
+
+    private static Admin createAdmin(String bootstrapServers) {
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
+        return Admin.create(props);
     }
 
     // -----------------------------------------------------------------------
@@ -170,6 +180,11 @@ public class TopicManager implements AutoCloseable {
 
     /**
      * Lists all topics with metadata.
+     *
+     * A topic deleted between listing the names and describing it is left
+     * out: a delete returns once the controller accepts it, before every
+     * broker's metadata has caught up, so the list can still name a topic
+     * that is gone by describe time (#24). Any other failure throws.
      */
     public List<TopicInfo> listTopics() {
         try {
@@ -177,7 +192,12 @@ public class TopicManager implements AutoCloseable {
             List<TopicInfo> infos = new ArrayList<>();
             for (String name : names) {
                 if (name.startsWith("__")) continue; // skip internal topics
-                infos.add(getTopicInfo(name));
+                try {
+                    infos.add(getTopicInfo(name));
+                } catch (RuntimeException e) {
+                    if (!isUnknownTopic(e)) throw e;
+                    logger.debug("Topic {} was deleted while listing topics; leaving it out", name);
+                }
             }
             return infos;
         } catch (InterruptedException e) {
@@ -186,6 +206,13 @@ public class TopicManager implements AutoCloseable {
         } catch (ExecutionException e) {
             throw new RuntimeException("Failed to list topics", e);
         }
+    }
+
+    private static boolean isUnknownTopic(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof org.apache.kafka.common.errors.UnknownTopicOrPartitionException) return true;
+        }
+        return false;
     }
 
     // -----------------------------------------------------------------------

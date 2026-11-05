@@ -42,6 +42,8 @@ the looper then marks it `promoted` or `declined` here with the date.
   LOCAL listener (29092 + 10000) is `ConsumerGroupStarvationTest`'s broker port (39092). It failed with
   `Address already in use` while another worktree's gates ran on this machine. Concurrent looper runs make
   the server tests flaky; ephemeral ports (bind 0, read back the bound port) would let gates run side by side.
+  #24 met the same limit: a second `mvn -pl server test` beside `KafkaIntegrationTest` cannot run that class (its
+  ports are taken), so its load ran the other classes. `TopicManagerListTopicsTest` (#24) takes 39792/39793.
 - **Drop the shade plexus-utils override** (2026-11-02, #18): `pom.xml`'s `<pluginManagement>` overrides
   maven-shade-plugin's plexus-utils to 3.6.1 (GHSA-6fmv-xxpf-w3cw; shade 3.6.1 asks for 3.5.1, 3.6.2 for
   3.6.0), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)

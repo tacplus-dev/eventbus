@@ -150,19 +150,28 @@ class KafkaIntegrationTest {
 
     @Test
     @Order(5)
-    void topicManager_deleteTopic() {
+    void topicManager_deleteTopic() throws InterruptedException {
         TopicManager tm = new TopicManager(bootstrapAddress, 1, 1, 1);
         try {
             tm.ensureTopicExists("test.integration.DeleteMe");
             tm.deleteTopic("test.integration.DeleteMe");
 
-            // Verify it's gone.
-            List<TopicManager.TopicInfo> topics = tm.listTopics();
-            boolean found = topics.stream()
-                    .anyMatch(t -> t.name().equals("test.integration.DeleteMe"));
+            // Verify it's gone. The delete returns once the controller accepts
+            // it, so the broker's metadata can still list it for a moment:
+            // wait, bounded, for the end state.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            boolean found = listed(tm, "test.integration.DeleteMe");
+            while (found && System.nanoTime() < deadline) {
+                Thread.sleep(100);
+                found = listed(tm, "test.integration.DeleteMe");
+            }
             assertFalse(found, "deleted topic should not appear in list");
         } finally {
             tm.close();
         }
+    }
+
+    private static boolean listed(TopicManager tm, String topic) {
+        return tm.listTopics().stream().anyMatch(t -> t.name().equals(topic));
     }
 }
