@@ -4,6 +4,18 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **A security report from the build pipeline, and README's scan sections** (2026-11-05, nightly scan): the scan's
+  checklist reads "the build pipeline's security report (README: Security checks)" and "README: Trace propagation".
+  README has neither section, and the only pipeline is `.github/workflows/planning-files.yml`, so no report exists to read.
+  The scan does the advisory work by hand each night: OSV over the resolved trees, trivy over `event-bus.jar`
+  (#21), and the plugin realms (#22, #23). A CI job that publishes those results, with a README section naming it, would
+  give the scan, and anyone else, one place to read them. It belongs with the release CI (#2) and the gate decision
+  in "More checks in `just gates`" below.
+- **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
+  `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
+  to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
+  Debian only or Java LTS too, is not written down anywhere. A platform decision would settle it for every Java service.
+  Moving here would also mean `maven.compiler.release` 25 and a test run on JDK 25.
 - **Scan the built jar in the gates** (2026-11-04, #21): the OSV check of the resolved Maven trees reports 0
   advisories, yet `trivy rootfs server/target/event-bus.jar` finds 8 HIGH in jackson 2.21.2 / 3.1.2 shaded inside
   Hazelcast, which no pom tree lists. stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;
