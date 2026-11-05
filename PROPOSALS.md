@@ -4,6 +4,12 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Drop the plexus-archiver overrides** (2026-11-04, #23): `pom.xml`'s `<pluginManagement>` overrides
+  plexus-archiver to 4.15.0 under maven-jar-plugin 3.5.0 (asks for 4.10.4) and maven-plugin-plugin 3.15.1
+  (4.10.0), whose older plexus-archiver loads aircompressor 0.27 (GHSA-vx9q-rhv9-3jvg, HIGH; the build, not the
+  runtime), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
+  and tacplus-dev/kernel#37. Drop each once a release of that plugin asks for plexus-archiver 4.15.0 or later
+  and fleet-dev pins it; the plugins' newer lines are 4.0.0 betas today.
 - **A security report from the build pipeline, and README's scan sections** (2026-11-05, nightly scan): the scan's
   checklist reads "the build pipeline's security report (README: Security checks)" and "README: Trace propagation".
   README has neither section, and the only pipeline is `.github/workflows/planning-files.yml`, so no report exists to read.

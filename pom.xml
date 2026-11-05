@@ -32,6 +32,8 @@
 		<maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<exec-plugin.version>3.6.4</exec-plugin.version>
+		<jar-plugin.version>3.5.0</jar-plugin.version>
+		<plugin-plugin.version>3.15.1</plugin-plugin.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<logback.version>1.5.38</logback.version>
 		<!-- Javalin 7 is on Jetty 12: Jetty 11's HIGH advisories have no fix on
@@ -252,6 +254,38 @@
 							<groupId>org.codehaus.plexus</groupId>
 							<artifactId>plexus-utils</artifactId>
 							<version>4.0.3</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<!-- maven-jar-plugin comes from Maven's default bindings: its version is pinned here so that the override
+				     reaches it. -->
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>${jar-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-vx9q-rhv9-3jvg: jar 3.5.0 asks for plexus-archiver 4.10.4, which loads aircompressor 0.27;
+						     4.15.0 no longer depends on it (fleet-dev docs/java-plugins.md, #23).
+						     Drop it once a jar release asks for 4.15.0 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-archiver</artifactId>
+							<version>4.15.0</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-plugin-plugin</artifactId>
+					<version>${plugin-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-vx9q-rhv9-3jvg: plugin-plugin 3.15.1 asks for plexus-archiver 4.10.0, which loads aircompressor 0.27;
+						     4.15.0 no longer depends on it (fleet-dev docs/java-plugins.md, #23).
+						     Drop it once a plugin-plugin release asks for 4.15.0 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-archiver</artifactId>
+							<version>4.15.0</version>
 						</dependency>
 					</dependencies>
 				</plugin>
