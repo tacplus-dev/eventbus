@@ -378,4 +378,45 @@ class TypedRpcGeneratorTest {
         assertEquals(1, content.split("::parseFrom, null\\)", -1).length - 1,
                 "exactly one topic declares no namespace, so exactly one null reader: " + content);
     }
+
+    /**
+     * Trace propagation (tacplus-dev/looper#51). The generated publish body is
+     * where trace_id is wired at all: PublishTraceIdTest builds PublishHandler
+     * by hand with the extractor, so only this test sees the generator drop it.
+     * A non-trace topic must pass its type's getTraceId and the onTraceId
+     * dispatcher; the trace topic passes null for both so it does not dispatch
+     * traces about itself. Matched exactly, not by suffix: a type merely named
+     * like *TraceEvent is an ordinary topic and keeps propagation.
+     */
+    @Test
+    void generate_wiresTraceIdExtractorForEveryTopicButTheTraceTopic() throws IOException {
+        TopicDiscovery.TopicField ordinary = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "event_stream", "aegis.TopologyEvent",
+                "services.aegis.aegis.AegisState.EventStream", "services/aegis");
+        TopicDiscovery.TopicField lookalike = new TopicDiscovery.TopicField(
+                "AegisState", "aegis", "tool_traces", "aegis.ToolTraceEvent",
+                "services.aegis.aegis.AegisState.ToolTraces", "services/aegis");
+        TopicDiscovery.TopicField trace = new TopicDiscovery.TopicField(
+                "TraceEventBus", "trace", "trace_events", "trace.TraceEvent",
+                "common.trace.agentsensor.TraceEventBus.TraceEvents", "common/trace",
+                "common", false, "agentsensor");
+
+        TypedRpcGenerator gen = new TypedRpcGenerator(tempDir, "com.example.services");
+        gen.generate(withAuth(List.of(ordinary, lookalike, trace)));
+
+        String content = Files.readString(tempDir.resolve(
+                "src/main/java/com/example/services/generated/TypedEventBusBindings.java"));
+
+        assertTrue(content.contains("Aegis.TopologyEvent::getTraceId, onTraceId, "),
+                "a non-trace topic must propagate trace_id: " + content);
+        assertTrue(content.contains("Aegis.ToolTraceEvent::getTraceId, onTraceId, "),
+                "a type only named like TraceEvent must still propagate trace_id: " + content);
+        assertFalse(content.contains("Trace.TraceEvent::getTraceId"),
+                "the trace topic must not dispatch traces about itself: " + content);
+        assertEquals(2, content.split("::getTraceId, onTraceId, ", -1).length - 1,
+                "exactly the two non-trace topics carry the extractor: " + content);
+        assertTrue(content.contains(
+                        "null, null, com.example.services.types.common.trace.Helpers::validateTraceEvent"),
+                "the trace topic passes no extractor and no dispatcher: " + content);
+    }
 }

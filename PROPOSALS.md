@@ -41,8 +41,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   same decision.
 - **`looper-trace check` does not read Java** (2026-11-03, #19): it reports "not checked: 41 Java files"
   and passes with 0 handlers, so every eventbus handler's trace propagation (tacplus-dev/looper#51) rests
-  on reading it by hand. `PublishHandler` (the only handler whose requests carry field 200) is now covered
-  by `PublishTraceIdTest`; any new handler or causal call is not caught by the tool. Java support belongs
+  on reading it by hand. Every request carries field 200, but `PublishHandler`'s Kafka produce is the only
+  request-caused call that can carry it (#25); it is covered by `PublishTraceIdTest`, and the generator's
+  wiring of it into the `PublishTo*` bindings by `TypedRpcGeneratorTest`. Any new handler or causal call
+  is not caught by the tool. Java support belongs
   in tacplus-dev/looper, not here.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks

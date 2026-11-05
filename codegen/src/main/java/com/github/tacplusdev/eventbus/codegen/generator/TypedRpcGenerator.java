@@ -27,6 +27,9 @@ import java.util.Set;
  */
 public class TypedRpcGenerator {
 
+    /** The platform trace event's proto FQN, the one topic type that does not propagate trace_id. */
+    static final String TRACE_EVENT_TYPE = "trace.TraceEvent";
+
     private final Path outputDir;
     private final String packageBase;
 
@@ -345,7 +348,10 @@ public class TypedRpcGenerator {
         String namespaceReaderArg = topic.hasNamespaceField()
                 ? qualifiedType + "::getNamespace"
                 : "null";
-        if (qualifiedType.endsWith("TraceEvent")) {
+        // Only the platform trace type skips trace_id propagation, so the trace
+        // topic does not dispatch traces about itself. Matched on the proto FQN,
+        // not a name suffix: any other *TraceEvent type is an ordinary topic.
+        if (TRACE_EVENT_TYPE.equals(topic.getFieldType())) {
             sb.append(indent).append("                            null, null, ").append(validatorRef)
               .append(", ").append(actorStamperArg)
               .append(", ").append(namespaceStamperArg)
