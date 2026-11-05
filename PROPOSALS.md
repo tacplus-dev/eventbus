@@ -22,6 +22,17 @@ the looper then marks it `promoted` or `declined` here with the date.
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
   Debian only or Java LTS too, is not written down anywhere. A platform decision would settle it for every Java service.
   Moving here would also mean `maven.compiler.release` 25 and a test run on JDK 25.
+- **Drop the default-lifecycle and protobuf plexus-utils overrides** (2026-11-04, #22): `pom.xml`'s
+  `<pluginManagement>` overrides plexus-utils (GHSA-6fmv-xxpf-w3cw) to 4.0.3 under maven-jar-plugin 3.5.0
+  (asks for 4.0.2), maven-resources-plugin 3.4.0 (4.0.2), maven-install-plugin 3.1.4 (4.0.1) and
+  maven-plugin-plugin 3.15.1 (4.0.1), and to 3.6.1 under protobuf-maven-plugin 0.6.1 and os-maven-plugin 1.7.1
+  (3.1.0; both newest releases), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md).
+  Drop each once a release of that plugin asks for a fixed plexus-utils (4.0.3+ on the 4.x line, 3.6.1+ on 3.x)
+  and fleet-dev pins it; the newer jar, resources, install and plugin-plugin lines are 4.0.0 betas today.
+  os-maven-plugin moved from a build `<extension>` to a plugin with `<extensions>true</extensions>` in
+  `model/pom.xml` only so it can take the override; it can go back once the override comes out.
+  maven-compiler-plugin 3.16.0 (the fleet pin) needs no override. fleet-dev docs/java-plugins.md does not yet
+  name maven-install-plugin: worth adding there.
 - **Scan the built jar in the gates** (2026-11-04, #21): the OSV check of the resolved Maven trees reports 0
   advisories, yet `trivy rootfs server/target/event-bus.jar` finds 8 HIGH in jackson 2.21.2 / 3.1.2 shaded inside
   Hazelcast, which no pom tree lists (#21 dropped Hazelcast, which nothing used; the jar now scans clean). stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;

@@ -29,11 +29,15 @@
 		<gson.version>2.13.2</gson.version>
 		<jjwt.version>0.13.0</jjwt.version>
 		<junit.version>6.0.2</junit.version>
-		<maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+		<maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<exec-plugin.version>3.6.4</exec-plugin.version>
 		<jar-plugin.version>3.5.0</jar-plugin.version>
+		<resources-plugin.version>3.4.0</resources-plugin.version>
+		<install-plugin.version>3.1.4</install-plugin.version>
 		<plugin-plugin.version>3.15.1</plugin-plugin.version>
+		<protobuf-plugin.version>0.6.1</protobuf-plugin.version>
+		<os-plugin.version>1.7.1</os-plugin.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<logback.version>1.5.38</logback.version>
 		<!-- Javalin 7 is on Jetty 12: Jetty 11's HIGH advisories have no fix on
@@ -257,8 +261,8 @@
 						</dependency>
 					</dependencies>
 				</plugin>
-				<!-- maven-jar-plugin comes from Maven's default bindings: its version is pinned here so that the override
-				     reaches it. -->
+				<!-- maven-jar-plugin, maven-resources-plugin and maven-install-plugin come from Maven's default
+				     bindings: their versions are pinned here so that the overrides reach them. -->
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-jar-plugin</artifactId>
@@ -271,6 +275,41 @@
 							<groupId>org.codehaus.plexus</groupId>
 							<artifactId>plexus-archiver</artifactId>
 							<version>4.15.0</version>
+						</dependency>
+						<!-- GHSA-6fmv-xxpf-w3cw: jar 3.5.0 asks for plexus-utils 4.0.2 (fleet-dev docs/java-plugins.md, #22).
+						     Drop it once a jar release asks for 4.0.3 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>4.0.3</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-resources-plugin</artifactId>
+					<version>${resources-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-6fmv-xxpf-w3cw: resources 3.4.0 asks for plexus-utils 4.0.2 (fleet-dev docs/java-plugins.md, #22).
+						     Drop it once a resources release asks for 4.0.3 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>4.0.3</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-install-plugin</artifactId>
+					<version>${install-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-6fmv-xxpf-w3cw: install 3.1.4 asks for plexus-utils 4.0.1 (fleet-dev docs/java-plugins.md, #22).
+						     Drop it once an install release asks for 4.0.3 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>4.0.3</version>
 						</dependency>
 					</dependencies>
 				</plugin>
@@ -286,6 +325,43 @@
 							<groupId>org.codehaus.plexus</groupId>
 							<artifactId>plexus-archiver</artifactId>
 							<version>4.15.0</version>
+						</dependency>
+						<!-- GHSA-6fmv-xxpf-w3cw: plugin-plugin 3.15.1 asks for plexus-utils 4.0.1 (fleet-dev docs/java-plugins.md, #22).
+						     Drop it once a plugin-plugin release asks for 4.0.3 or later and fleet-dev pins it. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>4.0.3</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<plugin>
+					<groupId>org.xolstice.maven.plugins</groupId>
+					<artifactId>protobuf-maven-plugin</artifactId>
+					<version>${protobuf-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-6fmv-xxpf-w3cw: protobuf-maven-plugin 0.6.1, the newest release, asks for plexus-utils 3.1.0
+						     (fleet-dev docs/java-plugins.md, #22); it is built against the 3.x line, so 3.6.1.
+						     Drop it once a release asks for 3.6.1 or later. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>3.6.1</version>
+						</dependency>
+					</dependencies>
+				</plugin>
+				<plugin>
+					<groupId>kr.motd.maven</groupId>
+					<artifactId>os-maven-plugin</artifactId>
+					<version>${os-plugin.version}</version>
+					<dependencies>
+						<!-- GHSA-6fmv-xxpf-w3cw: os-maven-plugin 1.7.1, the newest release, asks for plexus-utils 3.1.0
+						     (fleet-dev docs/java-plugins.md, #22); it is built against the 3.x line, so 3.6.1.
+						     Drop it once a release asks for 3.6.1 or later. -->
+						<dependency>
+							<groupId>org.codehaus.plexus</groupId>
+							<artifactId>plexus-utils</artifactId>
+							<version>3.6.1</version>
 						</dependency>
 					</dependencies>
 				</plugin>

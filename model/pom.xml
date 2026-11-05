@@ -123,14 +123,14 @@
 				<directory>target/generated-sources/model/src/main/resources</directory>
 			</resource>
 		</resources>
-		<extensions>
-			<extension>
+		<plugins>
+			<!-- A plugin with extensions, not a build <extension>, so that it takes the parent's
+			     plexus-utils override (#22). -->
+			<plugin>
 				<groupId>kr.motd.maven</groupId>
 				<artifactId>os-maven-plugin</artifactId>
-				<version>1.7.1</version>
-			</extension>
-		</extensions>
-		<plugins>
+				<extensions>true</extensions>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -139,7 +139,6 @@
 			<plugin>
 				<groupId>org.xolstice.maven.plugins</groupId>
 				<artifactId>protobuf-maven-plugin</artifactId>
-				<version>0.6.1</version>
 				<configuration>
 					<protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
 					<pluginId>grpc-java</pluginId>
@@ -240,7 +239,7 @@
 		<snakeyaml.version>2.5</snakeyaml.version>
 		<toml4j.version>0.7.2</toml4j.version>
 		<jjwt.version>0.13.0</jjwt.version>
-		<maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+		<maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
 		<gson.version>2.13.2</gson.version>
 		<junit.version>6.0.2</junit.version>
 	</properties>
