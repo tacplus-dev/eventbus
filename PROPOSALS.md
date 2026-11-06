@@ -17,6 +17,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   (#21), and the plugin realms (#22, #23). A CI job that publishes those results, with a README section naming it, would
   give the scan, and anyone else, one place to read them. It belongs with the release CI (#2) and the gate decision
   in "More checks in `just gates`" below.
+  Still true on 2026-11-06. That night's scan found guava, jsoup and commons-lang3 advisories in the
+  maven-plugin-plugin and os-maven-plugin realms (#26), weeks after some were published. A realm check by hand
+  only covers the plugins someone thinks to look at. A job that runs `mvn -X` and queries OSV for every
+  `Included:` jar would cover them all.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
