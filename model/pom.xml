@@ -230,7 +230,7 @@
 			</plugin>
 		</plugins>
 	</build>
-	<properties><tacplus.bin>tacplus</tacplus.bin>
+	<properties><tacplus.bin>${project.basedir}/../tools/tacplus.sh</tacplus.bin>
 		<shade-plugin.version>3.6.1</shade-plugin.version>
 		<maven.compiler.release>21</maven.compiler.release>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

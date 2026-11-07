@@ -4,6 +4,10 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **ROADMAP "Now": the floor in force** (2026-11-07, #27): Jody asked on #27 that "Now" name the floor in force,
+  but a looper's commit that touches ROADMAP.md is refused. For an agent at Jody's request, "Unreleased; tacplus
+  floor 2.4." becomes "Released v0.1.1; tacplus floor 2.6 (2.6.1 pinned in tacplus.lock)." Kernel's is the same
+  (tacplus-dev/kernel#46).
 - **Drop the plexus-archiver overrides** (2026-11-04, #23): `pom.xml`'s `<pluginManagement>` overrides
   plexus-archiver to 4.15.0 under maven-jar-plugin 3.5.0 (asks for 4.10.4) and maven-plugin-plugin 3.15.1
   (4.10.0), whose older plexus-archiver loads aircompressor 0.27 (GHSA-vx9q-rhv9-3jvg, HIGH; the build, not the

@@ -1,12 +1,14 @@
 # Local development builds, and `just gates`: the checks the looper and the
 # nightly scanner run before and after every change to main.
 
-TACPLUS := env_var_or_default("TACPLUS_BIN", "tacplus")
+# tacplus runs in the build image tacplus.lock pins, by digest (tools/tacplus.sh);
+# TACPLUS_BIN overrides it with a tacplus of your own.
+TACPLUS := env_var_or_default("TACPLUS_BIN", "tools/tacplus.sh")
 
 default: generate
 
-# Regenerate model/target/generated-sources (not committed) with the compiler
-# line tacplus.yaml pins. Generated code is never committed or edited by hand,
+# Regenerate model/target/generated-sources (not committed) with the tacplus
+# release tacplus.lock pins. Generated code is never committed or edited by hand,
 # so generation must leave every tracked file as it found it.
 generate:
   #!/usr/bin/env bash
