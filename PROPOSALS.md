@@ -41,6 +41,15 @@ the looper then marks it `promoted` or `declined` here with the date.
   `model/pom.xml` only so it can take the override; it can go back once the override comes out.
   maven-compiler-plugin 3.16.0 (the fleet pin) needs no override. fleet-dev docs/java-plugins.md does not yet
   name maven-install-plugin: worth adding there.
+- **Drop the plugin-plugin guava/jsoup and os-maven-plugin commons-lang3 overrides** (2026-11-06, #26): `pom.xml`'s
+  `<pluginManagement>` also overrides, under maven-plugin-plugin 3.15.1, guava 33.2.1-jre (GHSA-xxph-c9ww-hj94) to
+  33.8.0-jre and jsoup 1.18.1 (GHSA-65r4-943x-97jj, GHSA-pmhh-3w7g-xqp8) to 1.24.1, and under os-maven-plugin 1.7.1
+  commons-lang3 3.5 (GHSA-j288-q9x7-2f5v) to 3.21.0. Drop each once a release of that plugin asks for a fixed
+  version (guava 33.7.2+, jsoup 1.23.2+, commons-lang3 3.18.0+) and fleet-dev pins it; plugin-plugin's newer line is
+  4.0.0-beta-2 and 1.7.1 is os-maven-plugin's newest release. The commons-lang3 override is one more reason
+  os-maven-plugin stays a plugin with extensions in `model/pom.xml`. fleet-dev docs/java-plugins.md does not name
+  these jars yet: worth adding there. The nightly scan found them only because it queries every plugin realm's
+  `Included:` jar from `mvn -X`; the gates' OSV check sees the dependency trees only.
 - **Scan the built jar in the gates** (2026-11-04, #21): the OSV check of the resolved Maven trees reports 0
   advisories, yet `trivy rootfs server/target/event-bus.jar` finds 8 HIGH in jackson 2.21.2 / 3.1.2 shaded inside
   Hazelcast, which no pom tree lists (#21 dropped Hazelcast, which nothing used; the jar now scans clean). stratum added `just audit-jar` to its gates (trivy, HIGH/CRITICAL, exit 1;
