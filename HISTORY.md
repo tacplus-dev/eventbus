@@ -19,3 +19,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-05 looper issue Gates flake: KafkaIntegrationTest.topicManager_deleteTopic fails when TopicManager.listTopics describes a just-deleted topic (#24, 3125719)
 - 2026-11-05 looper issue maven-compiler-plugin 3.15.0, resources, jar, plugin-plugin, protobuf and os-maven-plugin realms load plexus-utils (GHSA-6fmv-xxpf-w3cw) and commons-io 2.11.0 (GHSA-78wr-2p64-hpwj), both HIGH: bump compiler to 3.16.0 and override the rest (#22, c786bbb)
 - 2026-11-05 looper issue Trace propagation: no test that TypedRpcGenerator wires getTraceId/onTraceId into the generated Publish bindings (#25, a88e22f)
+- 2026-11-08 looper issue tacplus floor 2.5 is behind the latest released line (2.6) (#27)
