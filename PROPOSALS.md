@@ -25,6 +25,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   maven-plugin-plugin and os-maven-plugin realms (#26), weeks after some were published. A realm check by hand
   only covers the plugins someone thinks to look at. A job that runs `mvn -X` and queries OSV for every
   `Included:` jar would cover them all.
+  Still true on 2026-11-11: README still has neither section, `planning-files` is still the only workflow, and
+  code-scanning and Dependabot alerts answer 403 to the scan's token. By hand, the resolved trees and the 113
+  plugin and extension realm jars (`mvn -X install`) report no OSV advisories, and `event-bus.jar` and
+  `gcr.io/distroless/java21-debian13` scan clean under trivy.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -63,6 +67,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   wiring of it into the `PublishTo*` bindings by `TypedRpcGeneratorTest`. Any new handler or causal call
   is not caught by the tool. Java support belongs
   in tacplus-dev/looper, not here.
+  Still true on 2026-11-11: "not checked: 42 Java files", verdict pass (0 handlers). Read by hand, the Admin
+  and Subscribe handlers' only request-caused calls are Kafka AdminClient requests and consumer fetches, which
+  have no field that could carry `trace_id`. The kernel state calls (`setNodes`, `getAllNodes`, `getConfig`) are
+  made at startup and on the refresh timer, not because of a request.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
