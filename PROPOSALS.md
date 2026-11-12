@@ -29,6 +29,15 @@ the looper then marks it `promoted` or `declined` here with the date.
   code-scanning and Dependabot alerts answer 403 to the scan's token. By hand, the resolved trees and the 113
   plugin and extension realm jars (`mvn -X install`) report no OSV advisories, and `event-bus.jar` and
   `gcr.io/distroless/java21-debian13` scan clean under trivy.
+  Still true on 2026-11-12. The scan's runner had no Docker daemon (`failed to connect to the docker API at
+  unix:///var/run/docker.sock`), so neither `tools/tacplus.sh` nor `just gates` could run, and there was no
+  `event-bus.jar` to scan. By hand: the resolved trees (148 packages), the 113 plugin and extension realm jars, and
+  trivy over the 130 runtime jars that go into `event-bus.jar` all report no advisories. trivy now reports 8 HIGH in
+  `gcr.io/distroless/java21-debian13` (debian 13.7, `sha256:ff4749f6…`), all `affected` with no Debian fix yet:
+  libexpat1 2.9.0-1~deb13u1 (CVE-2026-113351, -115506, -117610, -118370, DoS) and libuuid1 2.41.5-0+deb13u1
+  (CVE-2026-76642, -78408, -78409, -78410, mount/nsenter, which a distroless image without those tools does not run).
+  No bump can fix them. The Dockerfile follows the tag, so the next image build picks up Debian's fix. A pipeline
+  report would show when that lands.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -71,6 +80,9 @@ the looper then marks it `promoted` or `declined` here with the date.
   and Subscribe handlers' only request-caused calls are Kafka AdminClient requests and consumer fetches, which
   have no field that could carry `trace_id`. The kernel state calls (`setNodes`, `getAllNodes`, `getConfig`) are
   made at startup and on the refresh timer, not because of a request.
+  Corrected on 2026-11-12: the Kafka produce is not the only request-caused call. A traced Publish also sends a
+  `TraceEvent` to that trace_id's WatchTrace stream (`EventBusHandler.dispatchTrace` → `WatchTraceHandler.dispatch`),
+  and no test covers that hop (#28). A tool that read Java would have listed it.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
