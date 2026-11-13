@@ -4,6 +4,15 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+
+- **llmproxy's and deploymentproxy's release-tags.sh hold a line back once its minor reaches 10** (2026-11-13, #2):
+  they take the line's highest patch from `git tag -l "v$line.*"`, a glob that also matches `v0.10.x` for line
+  `0.1`, and `sort -t. -k3,3n` then picks `v0.10.x`'s patch, so `0.1` never moves again. eventbus's
+  `tools/release-tags.sh` matches only `v<line>.<n>` (tested in `tools/release_test.sh`). A bug for those
+  repositories, harmless until a `0.10` exists.
+- **A container smoke check in release.yml** (2026-11-13, #2): the release builds and pushes the image but does
+  not start it. The health probe on 8444 would answer NOT_SERVING with no kernel; see the smoke-check entry
+  below (#11).
 - **ROADMAP "Now": the floor in force** (2026-11-07, #27): Jody asked on #27 that "Now" name the floor in force,
   but a looper's commit that touches ROADMAP.md is refused. For an agent at Jody's request, "Unreleased; tacplus
   floor 2.4." becomes "Released v0.1.1; tacplus floor 2.6 (2.6.1 pinned in tacplus.lock)." Kernel's is the same
