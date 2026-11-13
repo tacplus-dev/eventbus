@@ -38,6 +38,19 @@ the looper then marks it `promoted` or `declined` here with the date.
   (CVE-2026-76642, -78408, -78409, -78410, mount/nsenter, which a distroless image without those tools does not run).
   No bump can fix them. The Dockerfile follows the tag, so the next image build picks up Debian's fix. A pipeline
   report would show when that lands.
+  2026-11-13: the build pipeline now writes a report (looper-scan, `security/summary.md` and `findings.json`), but
+  it doesn't cover what the scan checks by hand yet. Tonight's report says "0 finding(s)", but it is for 6bfca94, the
+  unmerged `looper/eventbus-28` branch, not main (7e7b541). It also lists under "Not analyzed": osv-scanner "transitive
+  dependencies not resolved: failed resolution for .../server/pom.xml: ... eventbus-server[Concrete:1.2.0-SNAPSHOT]"
+  (the reactor's own `eventbus-model` SNAPSHOT is in no repository), and spotbugs "the gates compiled no
+  target/classes". So the "0" covers none of the Maven tree. The report doesn't look at plugin realms (#18, #20, #22, #23, #26) or
+  shaded jars (#21) either. Resolving the server tree needs `eventbus-model` installed first (or a scan after
+  `mvn install`), which is a change to looper-scan in tacplus-dev/looper, not here. README still has no "Security
+  checks" or "Trace propagation" section. By hand on main: the 149 resolved packages, the 128 plugin and extension
+  realm jars (`mvn -X install`, plus exec-maven-plugin 3.6.4's realm) and trivy over the 126 runtime jars report no
+  advisories. The base image (`sha256:132eb554…`, still debian 13.7) has the same 8 HIGH, still with no Debian fix.
+  The runner still had no Docker daemon, so `just gates` could not run on main (`generate` fails at `docker run`).
+  The pinned build image digest still resolves on ghcr.io.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -83,6 +96,8 @@ the looper then marks it `promoted` or `declined` here with the date.
   Corrected on 2026-11-12: the Kafka produce is not the only request-caused call. A traced Publish also sends a
   `TraceEvent` to that trace_id's WatchTrace stream (`EventBusHandler.dispatchTrace` → `WatchTraceHandler.dispatch`),
   and no test covers that hop (#28). A tool that read Java would have listed it.
+  Still true on 2026-11-13: "not checked: 42 Java files", verdict pass (0 handlers). Read by hand on main, nothing is
+  new beyond #28 (open; its test is on `looper/eventbus-28`, which has not merged).
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
