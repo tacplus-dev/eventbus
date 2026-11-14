@@ -402,7 +402,7 @@ public class EventBusHandler implements Handler {
 	/** {@link #dispatchTrace(String)} on a given handler and instance id; package-private for tests. */
 	static void dispatchTrace(WatchTraceHandler watchTraceHandler, String instanceId, String traceId) {
 		watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
-			.setTraceId(traceId)
+			// mutation: .setTraceId(traceId)
 			.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
 			.setRound(Trace.TraceRound.newBuilder()
 				.setService(SERVICE_NAME)
