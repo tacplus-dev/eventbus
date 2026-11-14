@@ -97,7 +97,9 @@ the looper then marks it `promoted` or `declined` here with the date.
   `TraceEvent` to that trace_id's WatchTrace stream (`EventBusHandler.dispatchTrace` → `WatchTraceHandler.dispatch`),
   and no test covers that hop (#28). A tool that read Java would have listed it.
   Still true on 2026-11-13: "not checked: 42 Java files", verdict pass (0 handlers). Read by hand on main, nothing is
-  new beyond #28 (open; its test is on `looper/eventbus-28`, which has not merged).
+  new beyond #28.
+  Covered since #28 by `WatchTraceDispatchTest` (a real `PublishHandler` through `EventBusHandler.dispatchTrace`
+  into a real `WatchTraceHandler`).
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
@@ -108,7 +110,7 @@ the looper then marks it `promoted` or `declined` here with the date.
   `Address already in use` while another worktree's gates ran on this machine. Concurrent looper runs make
   the server tests flaky; ephemeral ports (bind 0, read back the bound port) would let gates run side by side.
   #24 met the same limit: a second `mvn -pl server test` beside `KafkaIntegrationTest` cannot run that class (its
-  ports are taken), so its load ran the other classes. `TopicManagerListTopicsTest` (#24) takes 39792/39793.
+  ports are taken), so its load ran the other classes. `TopicManagerListTopicsTest` (#24) takes 39792/39793, `WatchTraceDispatchTest` (#28) 39992/39993.
 - **Drop the shade plexus-utils override** (2026-11-02, #18): `pom.xml`'s `<pluginManagement>` overrides
   maven-shade-plugin's plexus-utils to 3.6.1 (GHSA-6fmv-xxpf-w3cw; shade 3.6.1 asks for 3.5.1, 3.6.2 for
   3.6.0), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
