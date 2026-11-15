@@ -35,8 +35,13 @@ build: generate
 test: build
   mvn -B test
 
+# The release rules (tools/release-tags.sh, tools/release-notes.sh) on fixture
+# repositories.
+release-test:
+  tools/release_test.sh
+
 # The gates every change passes before it is pushed.
-gates: check-generated test
+gates: check-generated test release-test
 
 clean:
   rm -rf model/target codegen/target server/target target
