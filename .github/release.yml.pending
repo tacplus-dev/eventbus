@@ -1,0 +1,161 @@
+name: release
+
+# On a version tag vX.Y.Z: run the gates on the tag, publish ghcr.io/tacplus-dev/eventbus:X.Y.Z, move the line
+# tag X.Y when this is the line's highest release (tools/release-tags.sh), and create the GitHub release with the
+# commits since the previous release (tools/release-notes.sh), never marking a patch on an older line Latest. A
+# pre-release (vX.Y.Z-rc.N) publishes only its own tag. Fleets pin X.Y (tacplus-dev/tacplus#180). Release images
+# come from this workflow for now (tacplus-dev/roadmap decisions/ci-on-gitlab-2026-10-27.md, addendum 2026-11-07).
+#
+# workflow_dispatch with existing: publishes a tag that already exists, from its own tree (a tag pushed before this
+# workflow, or a release whose run failed): the gates, the image and the release, as its push would have. Without
+# existing it is a dry run: it tags HEAD locally as the given version, runs the gates, builds the image and prints
+# the image tags and notes that release would get, and publishes nothing.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. v0.1.3"
+        required: true
+      existing:
+        description: "Publish the existing tag (off: a dry run of HEAD as that version, nothing published)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# One release at a time, so of two tags on one line the later run sees the other before it moves X.Y.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && !inputs.existing }}
+  # The platforms the image is built for. amd64 is off, as in the fleets' images/pins.yaml `platforms` (Jody,
+  # 2026-11-07: the fleets run on arm64); "linux/arm64,linux/amd64" builds both, one multi-arch image.
+  PLATFORMS: linux/arm64
+  # The launcher every service image runs under (Dockerfile), built from source at the commit the fleets pin
+  # (fleet-seatrials images/pins.yaml launcher_commit).
+  LAUNCHER_COMMIT: c575e147eeb1b5fc7f242a41578831f61bbcf708
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Every tag: the line tag and the notes depend on the releases already made.
+          fetch-depth: 0
+      - name: Tags and notes
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --force --tags origin
+          if [[ $DRY_RUN == true ]]; then
+            if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+              echo "$VERSION is already tagged: publish it with existing, or dry-run another version"; exit 1
+            fi
+            git tag "$VERSION"
+          elif ! git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "$VERSION is not a tag"; exit 1
+          fi
+          # The release's own tree, in a clone of its own (the gates run in a container that sees only it).
+          src="$RUNNER_TEMP/src"
+          git clone -q --no-checkout . "$src"
+          git -C "$src" checkout -q --detach "$VERSION"
+          # The deterministic build (tacplus-dev/roadmap decisions/deterministic-builds-2026-10-27.md): the tag's
+          # own tacplus release and build image, by digest. A tag without them cannot be rebuilt as it was gated.
+          lock="$src/tacplus.lock"
+          [[ -f "$lock" ]] || { echo "$VERSION has no tacplus.lock: it cannot be built as it was tagged; release the next patch instead"; exit 1; }
+          build_image="$(sed -n -E 's/^build_image:[[:space:]]*"?([^"[:space:]]+)"?.*$/\1/p' "$lock" | head -1)"
+          [[ "$build_image" == *@sha256:* ]] || { echo "$VERSION's tacplus.lock names no build_image by digest"; exit 1; }
+          tags="$(tools/release-tags.sh "$VERSION")"
+          list=""; for t in $tags; do list+="${list:+,}$IMAGE:$t"; done
+          tools/release-notes.sh "$VERSION" > "$RUNNER_TEMP/notes.md"
+          # The GitHub release marked Latest is the highest release, never a patch on an older line.
+          flag=--latest=false
+          if [[ "$VERSION" == *-* ]]; then
+            flag=--prerelease
+          elif [[ "$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1.2,1n -k2,2n -k3,3n | tail -1)" == "$VERSION" ]]; then
+            flag=--latest
+          fi
+          {
+            echo "src=$src"
+            echo "version=${VERSION#v}"
+            echo "build_image=$build_image"
+            echo "revision=$(git -C "$src" rev-parse HEAD)"
+            echo "created=$(git -C "$src" log -1 --format=%cI)"
+            echo "tags=$list"
+            echo "flag=$flag"
+          } >> "$GITHUB_OUTPUT"
+          echo "build image: $build_image"
+          echo "image tags: $list ($PLATFORMS)"
+          echo "release: $flag"
+          cat "$RUNNER_TEMP/notes.md"
+      # The gates on the tag, as the build pipeline runs them: `just gates` in the pinned build image, whose
+      # tacplus runs the release tacplus.lock pins. They build server/target/event-bus.jar, the image's.
+      - name: Gates
+        env:
+          SRC: ${{ steps.plan.outputs.src }}
+          BUILD_IMAGE: ${{ steps.plan.outputs.build_image }}
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e TACPLUS_BIN=tacplus \
+            -v "$SRC:$SRC" -w "$SRC" "$BUILD_IMAGE" just gates
+          test -f "$SRC/server/target/event-bus.jar"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: tacplus-dev/launcher
+          ref: ${{ env.LAUNCHER_COMMIT }}
+          path: launcher-src
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: launcher-src/go.mod
+          cache: false
+      - name: Launcher
+        working-directory: launcher-src
+        env:
+          SRC: ${{ steps.plan.outputs.src }}
+        run: |
+          for platform in ${PLATFORMS//,/ }; do
+            arch="${platform#linux/}"
+            CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$SRC/launcher-linux-$arch" .
+          done
+      # The Dockerfile's RUN steps run on each target platform.
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        if: env.DRY_RUN != 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ steps.plan.outputs.src }}
+          platforms: ${{ env.PLATFORMS }}
+          build-args: |
+            VERSION=${{ steps.plan.outputs.version }}
+            VCS_REF=${{ steps.plan.outputs.revision }}
+            BUILD_DATE=${{ steps.plan.outputs.created }}
+          # The source label links the package to this repository, whose visibility (public) it takes.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          push: ${{ env.DRY_RUN != 'true' }}
+          tags: ${{ steps.plan.outputs.tags }}
+      - name: Image
+        if: env.DRY_RUN != 'true'
+        run: docker buildx imagetools inspect "$IMAGE:${VERSION#v}"
+      - name: GitHub release
+        if: env.DRY_RUN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$VERSION" --verify-tag --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md" ${{ steps.plan.outputs.flag }}
