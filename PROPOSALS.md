@@ -51,6 +51,23 @@ the looper then marks it `promoted` or `declined` here with the date.
   advisories. The base image (`sha256:132eb554…`, still debian 13.7) has the same 8 HIGH, still with no Debian fix.
   The runner still had no Docker daemon, so `just gates` could not run on main (`generate` fails at `docker run`).
   The pinned build image digest still resolves on ghcr.io.
+  2026-11-15: the report the scan is handed is again a branch's, not main's: 2e877a5 (`looper/eventbus-2`, the gates
+  full on base 988f82e = main), 268 findings (1 HIGH, 135 MEDIUM, 132 LOW, all spotbugs), 0 new, 1 failing the policy,
+  the generated `CollectionRuntime.java:102` USO finding #29 already holds. looper-scan publishes every build's
+  findings as "the repository's latest", so a branch build's report is what the next nightly reads and what `new`
+  is counted against; a nightly of main would read main's. The server tree is still "not analyzed": looper-scan
+  knows the case (its `tool_osv` falls back to `--no-resolve` on "a Maven module's sibling SNAPSHOT") and scans
+  `server/pom.xml`'s declared dependencies only, so kafka-clients' and the others' transitives are outside the
+  floor every build. A fix in tacplus-dev/looper: resolve against the gates' local repository
+  (`--experimental-resolution-data-source=native` after `mvn install`) or scan a CycloneDX SBOM the gates put in
+  `built/`. By hand on main tonight: the 136 resolved packages (`mvn dependency:tree`, all scopes) and the 112
+  plugin and extension realm jars of 18 realms (`mvn -X install -DskipTests -Dtacplus.bin=/bin/true`, which loads
+  every realm but server's without tacplus; exec-maven-plugin 3.6.4's from `dependency:resolve-plugins`) report no
+  OSV advisories, and trivy agrees on the SBOM. The base image (`sha256:132eb554…`, debian 13.7) has the same 8
+  HIGH, still with no Debian fix. No Docker daemon again, so `just gates` could not run here; the build pipeline
+  ran `just gates` green on 2e877a5 (base 988f82e; #2's comment) and on 9893207 (#28's land on 988f82e; #29's
+  body): main's gates pass, the one red is the security job (#29). tacplus 2.6 is still the latest line (v2.6.12
+  the newest patch; the lock's move is #29's).
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -98,6 +115,11 @@ the looper then marks it `promoted` or `declined` here with the date.
   and no test covers that hop (#28). A tool that read Java would have listed it.
   Still true on 2026-11-13: "not checked: 42 Java files", verdict pass (0 handlers). Read by hand on main, nothing is
   new beyond #28 (open; its test is on `looper/eventbus-28`, which has not merged).
+  Still true on 2026-11-15: "not checked: 42 Java files", verdict pass (0 handlers). Read by hand on main: the
+  request-caused calls are PublishHandler.onNext's Kafka produce (the record's `trace_id` header, PublishTraceIdTest)
+  and its `dispatchTrace` → `WatchTraceHandler.dispatch` (no test on main; #28, now Blocked-by #29, its test on
+  `looper/eventbus-28` at 2816e6a). SubscribeRequest and the Admin requests carry no field 200, and their Kafka
+  consumer and AdminClient calls have nothing to carry one; kernel's `getConfig` runs at startup. Nothing to file.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
