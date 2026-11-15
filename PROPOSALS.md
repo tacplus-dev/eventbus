@@ -4,6 +4,11 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Pin the Dockerfile's base images by digest** (2026-11-15, #14): the launcher is now a pinned
+  tacplus-dev/launcher release checked by sha256, but `gcr.io/distroless/java21-debian13`, `busybox` and the
+  fetch stage's `alpine:3.22` are still tags that move (decision deterministic-builds-2026-10-27). Pinning them
+  `@sha256:` makes the image reproducible; a bump then is a reviewed change, like `tacplus.lock`. Kernel's and
+  stratum's Dockerfiles are the same, and they still copy the launcher from the build context.
 - **ROADMAP "Now": the floor in force** (2026-11-07, #27): Jody asked on #27 that "Now" name the floor in force,
   but a looper's commit that touches ROADMAP.md is refused. For an agent at Jody's request, "Unreleased; tacplus
   floor 2.4." becomes "Released v0.1.1; tacplus floor 2.6 (2.6.1 pinned in tacplus.lock)." Kernel's is the same
