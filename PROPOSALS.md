@@ -68,6 +68,16 @@ the looper then marks it `promoted` or `declined` here with the date.
   ran `just gates` green on 2e877a5 (base 988f82e; #2's comment) and on 9893207 (#28's land on 988f82e; #29's
   body): main's gates pass, the one red is the security job (#29). tacplus 2.6 is still the latest line (v2.6.12
   the newest patch; the lock's move is #29's).
+  2026-11-16: the report is a branch's again, 198fa4d (`looper/eventbus-14`; it differs from main 96e1d66 only in
+  Dockerfile, .gitignore and the planning files). It has 268 findings, 0 new, and 1 failing the policy, the same
+  `CollectionRuntime.java:102` USO that #29 holds (now waiting on tacplus-dev/tacplus#720; v2.6.13 is the newest
+  2.6 patch and lacks the fix). The server tree is still "not analyzed". By hand on main: the 152 resolved
+  packages of the four modules, the 113 jars the plugin and extension realms load (`mvn -X install`, as above)
+  and exec-maven-plugin 3.6.4's resolved jars report no OSV advisories. trivy finds no HIGH or CRITICAL in the
+  129 runtime jars of server. The base image (`sha256:132eb554…`, debian 13.7) has the same 8 HIGH, still with no
+  Debian fix. There was again no Docker daemon behind the broker, so `just gates` failed at `generate` and could not
+  run here. No code has changed on main since #26 (2026-11-08). `alpine:3.22` in #14's new fetch stage is behind
+  the latest line, 3.24 (comment on #14).
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -120,6 +130,8 @@ the looper then marks it `promoted` or `declined` here with the date.
   and its `dispatchTrace` → `WatchTraceHandler.dispatch` (no test on main; #28, now Blocked-by #29, its test on
   `looper/eventbus-28` at 2816e6a). SubscribeRequest and the Admin requests carry no field 200, and their Kafka
   consumer and AdminClient calls have nothing to carry one; kernel's `getConfig` runs at startup. Nothing to file.
+  Still true on 2026-11-16: "not checked: 42 Java files", verdict pass (0 handlers). server/ and codegen/ have not
+  changed since then, so the reading holds: #28 is the one gap. Nothing to file.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
