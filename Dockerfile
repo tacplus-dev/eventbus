@@ -6,7 +6,9 @@
 FROM busybox AS setup
 RUN mkdir -p /var/lib/eventbus/data
 
-FROM gcr.io/distroless/java21-debian13
+# Pinned by digest (multi-arch index of the tag, 2026-11-17, Debian 13.7):
+# a base with security fixes is a digest move in a commit (#30).
+FROM gcr.io/distroless/java21-debian13@sha256:132eb554519304beb13de16013176efb8aa67bb7bf9e2d1ca340e97e744c3cb3
 
 ARG BUILD_DATE
 ARG VCS_REF
