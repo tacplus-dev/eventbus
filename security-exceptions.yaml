@@ -1,0 +1,20 @@
+# Copyright (c) 2026 Jody Scott
+# SPDX-License-Identifier: Apache-2.0
+#
+# The known findings this repository accepts, each until its expiry, in the form looper-scan reads
+# (tacplus-dev/looper#49: exactly id, reason, decided_by and expires, YYYY-MM-DD; one id per entry). The build's
+# security job enforces it: an expired entry fails the pipeline, and so does the finding it accepted.
+#
+# DS-0026 (trivy, LOW), "No HEALTHCHECK defined" in the release Dockerfile. The image is distroless (no shell, no
+# curl) and runs under Kubernetes, whose liveness and readiness probes hit the plaintext health port (8444)
+# themselves; Kubernetes ignores a Dockerfile HEALTHCHECK. Decided on #31 (Jody, 2026-11-17). On expiry the gate
+# goes red and the decision is revisited.
+#
+# The release image's unfixed MEDIUM, LOW and UNKNOWN base-image advisories are not accepted here (the same
+# decision): security-baseline.json records them against the pinned base digest, the nightly report tracks them,
+# and moving the Dockerfile's digest to a base that ships fixes clears them.
+exceptions:
+  - id: DS-0026
+    reason: "The release image is distroless (no shell or curl to run a HEALTHCHECK) and is health-checked by Kubernetes liveness/readiness probes on the plaintext health port 8444, not by a Dockerfile HEALTHCHECK."
+    decided_by: "jodydadescott (tacplus-dev/eventbus#31, 2026-11-17)"
+    expires: 2027-05-17

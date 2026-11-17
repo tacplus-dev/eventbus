@@ -2,11 +2,16 @@
 # Distroless Java 21 base with no shell.
 # The launcher binary reads LAUNCH_CMD and supervises the java process.
 
+# Every FROM is pinned by digest (#31), so the image builds from the same bases until a
+# commit moves a digest: refresh a base by moving its digest when it publishes fixes.
+# security-baseline.json names the distroless base by this digest: regenerate it
+# (looper-scan baseline) in the commit that moves it.
+
 # Pre-create /var/lib/eventbus with correct ownership for nonroot (65532).
-FROM busybox AS setup
+FROM busybox:1.38.0@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4 AS setup
 RUN mkdir -p /var/lib/eventbus/data
 
-FROM gcr.io/distroless/java21-debian13
+FROM gcr.io/distroless/java21-debian13@sha256:132eb554519304beb13de16013176efb8aa67bb7bf9e2d1ca340e97e744c3cb3
 
 ARG BUILD_DATE
 ARG VCS_REF
