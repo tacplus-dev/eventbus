@@ -78,6 +78,19 @@ the looper then marks it `promoted` or `declined` here with the date.
   Debian fix. There was again no Docker daemon behind the broker, so `just gates` failed at `generate` and could not
   run here. No code has changed on main since #26 (2026-11-08). `alpine:3.22` in #14's new fetch stage is behind
   the latest line, 3.24 (comment on #14).
+  2026-11-18: the nightly report is main's this time (b8f67e3). It has 357 findings, 1 failing the policy (#29's USO)
+  and 89 new, all trivy findings on the base image and the Dockerfile. The 79 MEDIUM/LOW/UNKNOWN and DS-0001/DS-0026
+  are #31's. The 8 HIGH, still with no fixed package, are the ones #30 closed. They count as `new` only because
+  #31's baseline and digest pin haven't landed (both wait on #29). A new problem fails the run: CodeQL's Java
+  analysis ran out of memory (#33, needs-decision, with stratum#43, llmproxy#69 and mailbox#21; no
+  tacplus-dev/looper issue owns it yet). The server tree is still "not analyzed" by osv-scanner. By hand:
+  `mvn dependency:tree` of the four modules (148 packages, all scopes) reports no advisories under osv-scanner
+  or trivy. `dependency:resolve-plugins` realms, with the pom's overrides, leave only #32's clean/deploy and
+  `maven-site-plugin` 3.12.1, the site lifecycle's default. That one loads jetty 9.4, dom4j 1.1, velocity 1.7,
+  maven-core 3.2.5 and others with HIGH/CRITICAL advisories, and even 3.21.0, its newest release, loads jetty 9.4.56,
+  commons-io 2.11.0, beanutils 1.9.4 and plexus-utils 4.0.1. No recipe runs `site`, so I filed nothing for it.
+  A fleet-dev pin with overrides would close it if anyone ever runs `mvn site`. The gates passed on b8f67e3
+  (pipeline 3082135383). tacplus 2.6 is still the latest line (v2.6.13), and distroless publishes no debian14 base.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
@@ -132,6 +145,10 @@ the looper then marks it `promoted` or `declined` here with the date.
   consumer and AdminClient calls have nothing to carry one; kernel's `getConfig` runs at startup. Nothing to file.
   Still true on 2026-11-16: "not checked: 42 Java files", verdict pass (0 handlers). server/ and codegen/ have not
   changed since then, so the reading holds: #28 is the one gap. Nothing to file.
+  Still true on 2026-11-18 (b8f67e3): "not checked: 42 Java files", verdict pass (0 handlers). Read by hand: the
+  EventbusState and EventbusConfigState handlers are stubs with no downstream call. The Admin RPCs call only
+  `TopicManager` (Kafka AdminClient). Publish's two causal calls are the record header (PublishTraceIdTest) and
+  `dispatchTrace`, which still has no test on main (#28). Nothing new to file.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
