@@ -91,6 +91,17 @@ the looper then marks it `promoted` or `declined` here with the date.
   commons-io 2.11.0, beanutils 1.9.4 and plexus-utils 4.0.1. No recipe runs `site`, so I filed nothing for it.
   A fleet-dev pin with overrides would close it if anyone ever runs `mvn site`. The gates passed on b8f67e3
   (pipeline 3082135383). tacplus 2.6 is still the latest line (v2.6.13), and distroless publishes no debian14 base.
+  2026-11-19: the report is again main's b8f67e3 (main is 1449e39, which changes only PROPOSALS.md), with the same
+  357 findings and the same CodeQL out-of-memory problem (#33 closed; tacplus-dev/looper#189 holds it). The server
+  tree is still "not analyzed". By hand: `mvn dependency:list` of the four modules (137 packages, all scopes, after
+  installing the parent and model POMs into a scratch repository) and the `mvn -X <plugin>:help` realms of the 11
+  plugins the build runs (105 jars, overrides applied) report no OSV advisories. `maven-site-plugin` is filed this
+  time (#34, needs-decision), on #32's grounds: a lifecycle no recipe runs still loads when anyone runs it. Its real
+  `-X` realm (3.12.1) has 1 CRITICAL and 17 HIGH. The newest 3.x is 3.22.0, not 3.21.0. With beanutils 1.11.0 and
+  jsoup 1.24.1 overrides, it leaves only Jetty 9.4.58, which has no newer 9.4 on Central. A realm job, as proposed
+  above, should load every lifecycle's plugins (site and clean/deploy too), not only `install`'s. The
+  `java21-debian13` tag now points to `sha256:3982fcc5…`, not the `132eb554…` that #30/#31's unlanded branches
+  pin. trivy shows the same 8 HIGH there, still unfixed.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
