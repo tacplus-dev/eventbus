@@ -35,8 +35,12 @@ build: generate
 test: build
   mvn -B test
 
+# Every plugin `mvn site` runs is pinned in the root <pluginManagement> (#34).
+check-site-plugins:
+  tools/check-site-plugins.sh
+
 # The gates every change passes before it is pushed.
-gates: check-generated test
+gates: check-generated test check-site-plugins
 
 clean:
   rm -rf model/target codegen/target server/target target

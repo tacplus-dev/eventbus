@@ -1,0 +1,28 @@
+# The advisories this repository accepts (looper-scan's policy): each entry an
+# id, where (a path glob), reason, decided_by and expires (YYYY-MM-DD).
+exceptions:
+  # The maven-site-plugin realm (#34): maven-site-plugin 3.22.0, pinned in the
+  # root <pluginManagement>, depends on Jetty 9.4.58.v20250814, the newest 9.4
+  # on Maven Central (EOL); every site release, 4.0.0-M16 too, is on Jetty 9.4.
+  # Only site:run starts that Jetty, on localhost; it never reaches a build
+  # artifact or the image. Revisit when a site release with a clean realm ships.
+  - id: GHSA-355h-qmc2-wpwf
+    where: pom.xml
+    reason: "maven-site-plugin 3.22.0 realm, jetty-http 9.4.58.v20250814: only site:run serves with it, on localhost; no Jetty 9.4 fix on Central (#34)"
+    decided_by: jodydadescott
+    expires: 2026-12-04
+  - id: GHSA-2fvj-hgj9-j2gr
+    where: pom.xml
+    reason: "maven-site-plugin 3.22.0 realm, jetty-security 9.4.58.v20250814: only site:run serves with it, on localhost; no Jetty 9.4 fix on Central (#34)"
+    decided_by: jodydadescott
+    expires: 2026-12-04
+  - id: GHSA-qh8g-58pp-2wxh
+    where: pom.xml
+    reason: "maven-site-plugin 3.22.0 realm, jetty-http 9.4.58.v20250814: only site:run serves with it, on localhost; fixed only in Jetty 12.0.12 (#34)"
+    decided_by: jodydadescott
+    expires: 2026-12-04
+  - id: GHSA-7p3p-8qv8-m2vh
+    where: pom.xml
+    reason: "maven-site-plugin 3.22.0 realm, jetty-server 9.4.58.v20250814: only site:run serves with it, on localhost; no Jetty 9.4 fix on Central (#34)"
+    decided_by: jodydadescott
+    expires: 2026-12-04

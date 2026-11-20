@@ -4,6 +4,13 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **The site plugin's Jetty exceptions expire 2026-12-04** (2026-11-20, #34): `security-exceptions.yaml` accepts
+  the maven-site-plugin 3.22.0 realm's Jetty 9.4.58 advisories (GHSA-355h-qmc2-wpwf, GHSA-2fvj-hgj9-j2gr HIGH;
+  GHSA-qh8g-58pp-2wxh, GHSA-7p3p-8qv8-m2vh MODERATE) for 14 days, Jody's decision on #34. Every site release,
+  4.0.0-M16 too, is on Jetty 9.4 (EOL, no fix on Central). Before then: move the pin to a site release off
+  Jetty 9.4 if one ships, else ask for a renewal. Also: pin maven-site-plugin and maven-project-info-reports-plugin
+  fleet-wide in tacplus-dev/fleet-dev's `docs/java-plugins.md`, next to fleet-dev#27's default-lifecycle pins;
+  every Java service on Maven 3.9.x runs the 3.12.1 default (dom4j 1.1, CRITICAL) and the siblings are unchecked.
 - **ROADMAP "Now": the floor in force** (2026-11-07, #27): Jody asked on #27 that "Now" name the floor in force,
   but a looper's commit that touches ROADMAP.md is refused. For an agent at Jody's request, "Unreleased; tacplus
   floor 2.4." becomes "Released v0.1.1; tacplus floor 2.6 (2.6.1 pinned in tacplus.lock)." Kernel's is the same
