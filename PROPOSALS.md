@@ -160,6 +160,8 @@ the looper then marks it `promoted` or `declined` here with the date.
   EventbusState and EventbusConfigState handlers are stubs with no downstream call. The Admin RPCs call only
   `TopicManager` (Kafka AdminClient). Publish's two causal calls are the record header (PublishTraceIdTest) and
   `dispatchTrace`, which still has no test on main (#28). Nothing new to file.
+  Still true on 2026-11-20 (ebe81b0): "not checked: 42 Java files", verdict pass (0 handlers). Only PROPOSALS.md
+  has changed since b8f67e3, so the 2026-11-18 reading holds: #28 is still the one gap. Nothing to file.
 - **Drop the antrun plexus-utils override** (2026-11-03, #20): `pom.xml`'s `<pluginManagement>` overrides
   maven-antrun-plugin 3.2.0's plexus-utils to 4.0.3 (GHSA-6fmv-xxpf-w3cw; 3.2.0, the newest release, asks
   for 4.0.2), per [fleet-dev docs/java-plugins.md](https://github.com/tacplus-dev/fleet-dev/blob/main/docs/java-plugins.md)
