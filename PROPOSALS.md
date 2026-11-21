@@ -102,6 +102,19 @@ the looper then marks it `promoted` or `declined` here with the date.
   above, should load every lifecycle's plugins (site and clean/deploy too), not only `install`'s. The
   `java21-debian13` tag now points to `sha256:3982fcc5…`, not the `132eb554…` that #30/#31's unlanded branches
   pin. trivy shows the same 8 HIGH there, still unfixed.
+  2026-11-21: the report is a branch's again: 2271b32 (`looper/eventbus-34`, base 070c950 = main). It has 268
+  SpotBugs findings, 1 failing the policy (#29's USO, now waiting on tacplus-dev/tacplus#720). Its summary says
+  "268 new" because "the base 070c950acaab (its build published none)". These are the same 268 the 11-15 and 11-16
+  reports counted with 0 new, so `new` is measured against whichever build last published a report, not against main.
+  With no `security-baseline.json` here, the 267 non-blocking findings were filed as one issue (#35, needs-decision:
+  18 hand-written, 249 generated, the latter tacplus-dev/tacplus#854's backlog). Every finding is `"test": false`
+  and the summary says "0 SAST in test code", yet 20 are in generated `…Test.java` (e.g.
+  `grpcserver/AuthorizerBehaviorTest.java`). looper-scan should classify generated tests as test code, which is a
+  change in tacplus-dev/looper. By hand: `mvn dependency:list` (137 packages, all scopes, after `mvn install` of the
+  parent and model with `-Dtacplus.bin=/bin/true`) and the 113 jars of the `-X` plugin and extension realms report
+  no OSV advisories. trivy finds no HIGH or CRITICAL in the 126 runtime jars of server. `dependency:resolve-plugins`
+  (overrides not applied) leaves only #32's clean/deploy and #34's site realm. The gates passed on ebe81b0
+  (pipeline 3092282353; main is 070c950, PROPOSALS.md only since). tacplus 2.6 is still the latest line (v2.6.13).
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
