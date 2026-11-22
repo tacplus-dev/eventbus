@@ -4,6 +4,14 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Generate from a pinned fleet, not the registry's HEAD** (2026-11-22, nightly scan, #37): `tacplus.yaml`'s
+  `states: all` (and `depends: kernel`) resolves every service's protos through tacplus-dev/registry when a build
+  runs. tacplus.lock pins the compiler but not those inputs. On 2026-11-20 kernel#69 added `TenantRegistryEntry`,
+  and main's gates turned red with no eventbus commit (#37). Pinning the fleet's revisions in a lock (written by a
+  command like `tacplus pin`, moved by a commit the looper's relock opens, as with the image) would make a fleet
+  change arrive as a reviewable PR whose gates run before it lands, per
+  tacplus-dev/roadmap decisions/deterministic-builds-2026-10-27.md. This is tacplus behaviour, so it would be a
+  tacplus-dev/tacplus feature that eventbus adopts.
 - **ROADMAP "Now": the floor in force** (2026-11-07, #27): Jody asked on #27 that "Now" name the floor in force,
   but a looper's commit that touches ROADMAP.md is refused. For an agent at Jody's request, "Unreleased; tacplus
   floor 2.4." becomes "Released v0.1.1; tacplus floor 2.6 (2.6.1 pinned in tacplus.lock)." Kernel's is the same
