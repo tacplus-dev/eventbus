@@ -9,6 +9,8 @@ import com.github.tacplusdev.eventbus.model.chassis.key.KeyHelpers;
 import com.github.tacplusdev.eventbus.model.chassis.servicemanager.Auth;
 import com.github.tacplusdev.eventbus.model.chassis.token.TokenWrapper;
 import com.github.tacplusdev.eventbus.model.types.services.eventbus.Eventbus;
+import com.github.tacplusdev.eventbus.model.types.services.kernel.Kernel;
+import com.github.tacplusdev.eventbus.model.types.services.letsencrypt.Letsencrypt;
 import com.github.tacplusdev.eventbus.model.types.sys.jwk.JwkOuterClass;
 import com.github.tacplusdev.eventbus.model.types.sys.key.KeyOuterClass;
 import com.github.tacplusdev.eventbus.model.types.sys.trace.Trace;
@@ -47,7 +49,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
@@ -219,8 +220,16 @@ class TopicAuthorizationTest {
             erase(TypedEventBusBindings.SUBSCRIBE_TO_TRACE_EVENT_BUS_TRACE_EVENTS);
     private static final MethodDescriptor<Message, Object> SUBSCRIBE_LETS_ENCRYPT_CERT =
             erase(TypedEventBusBindings.SUBSCRIBE_TO_LETS_ENCRYPT_CERT_BUS_STREAM);
+    private static final MethodDescriptor<Message, Object> PUBLISH_LETS_ENCRYPT_CERT =
+            erase(TypedEventBusBindings.PUBLISH_TO_LETS_ENCRYPT_CERT_BUS_STREAM);
+    private static final MethodDescriptor<Message, Object> SUBSCRIBE_TENANT_REGISTRY_ENTRY =
+            erase(TypedEventBusBindings.SUBSCRIBE_TO_TENANT_REGISTRY_ENTRY_BUS_STREAM);
+    private static final MethodDescriptor<Message, Object> PUBLISH_TENANT_REGISTRY_ENTRY =
+            erase(TypedEventBusBindings.PUBLISH_TO_TENANT_REGISTRY_ENTRY_BUS_STREAM);
 
     private static final Message TRACE_EVENT = Trace.TraceEvent.getDefaultInstance();
+    private static final Message LETS_ENCRYPT_CERT = Letsencrypt.LetsEncryptCert.getDefaultInstance();
+    private static final Message TENANT_REGISTRY_ENTRY = Kernel.TenantRegistryEntry.getDefaultInstance();
     private static final Message SUBSCRIBE_REQUEST = Eventbus.SubscribeRequest.getDefaultInstance();
 
     // ---- REJECTION: a valid eventbus token without the topic's entitlement ----
@@ -332,13 +341,17 @@ class TopicAuthorizationTest {
      * did before this change — one policy overwrote the other, so a caller
      * entitled on one topic was either refused there or admitted on the other.
      *
-     * <p>The regression needs such a pair in the generated bindings. This fleet
-     * declares one topic per bare rpc name, so the test is skipped naming what
-     * is missing; when a fleet gains the pair it fails instead, because the
-     * assertions have to be written against that pair's concrete types.
+     * <p>The pair is kernel's TenantRegistryEntryBus and letsencrypt's
+     * LetsEncryptCertBus, both of which serve PublishToStream and
+     * SubscribeToStream. Their policies, from each record's (spec.record):
+     * publish ["operator"] and subscribe ["stratum", "kernel"] on kernel's;
+     * publish ["letsencrypt"] and subscribe ["stratum"] on letsencrypt's.
+     * Each caller below is entitled on exactly one of the two topics.
+     *
+     * <p>A fleet without the pair skips, naming what is missing.
      */
     @Test
-    void sameRpcNameOnTwoTopics_policiesStayApart() {
+    void sameRpcNameOnTwoTopics_policiesStayApart() throws Exception {
         Map<String, List<String>> byBareRpc = new HashMap<>();
         for (ServerServiceDefinition perTopic : TypedEventBusBindings.buildPerTopicLazy(
                 () -> null, () -> null, () -> null, traceId -> { })) {
@@ -354,8 +367,45 @@ class TopicAuthorizationTest {
         assumeFalse(shared.isEmpty(),
                 "fleet declares no two topics sharing a bare rpc name (rpcs: " + byBareRpc.keySet()
                         + "); the same-rpc-name regression needs such a pair");
-        fail("fleet now carries topics sharing a bare rpc name " + shared
-                + "; write this test's fixture against that pair");
+        for (MethodDescriptor<?, ?> md : List.of(PUBLISH_TENANT_REGISTRY_ENTRY, PUBLISH_LETS_ENCRYPT_CERT,
+                SUBSCRIBE_TENANT_REGISTRY_ENTRY, SUBSCRIBE_LETS_ENCRYPT_CERT)) {
+            String bare = MethodDescriptor.extractBareMethodName(md.getFullMethodName());
+            assertTrue(byBareRpc.getOrDefault(bare, List.of()).containsAll(List.of(
+                            "kernel.TenantRegistryEntryBusStateService/" + bare,
+                            "letsencrypt.LetsEncryptCertBusStateService/" + bare)),
+                    "the fixture pair must share " + bare + ": " + byBareRpc.get(bare));
+        }
+
+        ImmutableKey key = newTestKey();
+        Authorizer authorizer = authorizerWithKey(key);
+        Server server = startServer(authorizer, true);
+        try {
+            String kernel = serviceToken(key, "kernel");
+            assertEquals(Status.Code.UNAVAILABLE,
+                    call(server, kernel, SUBSCRIBE_TENANT_REGISTRY_ENTRY, SUBSCRIBE_REQUEST).getCode(),
+                    "kernel subscribes to the tenant registry and must reach the handler");
+            assertEquals(Status.Code.PERMISSION_DENIED,
+                    call(server, kernel, SUBSCRIBE_LETS_ENCRYPT_CERT, SUBSCRIBE_REQUEST).getCode(),
+                    "kernel's SubscribeToStream entitlement must not admit it to letsencrypt's topic");
+
+            String letsencrypt = serviceToken(key, "letsencrypt");
+            assertEquals(Status.Code.UNAVAILABLE,
+                    call(server, letsencrypt, PUBLISH_LETS_ENCRYPT_CERT, LETS_ENCRYPT_CERT).getCode(),
+                    "letsencrypt publishes its certificate and must reach the handler");
+            assertEquals(Status.Code.PERMISSION_DENIED,
+                    call(server, letsencrypt, PUBLISH_TENANT_REGISTRY_ENTRY, TENANT_REGISTRY_ENTRY).getCode(),
+                    "letsencrypt's PublishToStream entitlement must not admit it to kernel's topic");
+
+            String operator = serviceToken(key, "operator");
+            assertEquals(Status.Code.UNAVAILABLE,
+                    call(server, operator, PUBLISH_TENANT_REGISTRY_ENTRY, TENANT_REGISTRY_ENTRY).getCode(),
+                    "operator publishes the tenant registry and must reach the handler");
+            assertEquals(Status.Code.PERMISSION_DENIED,
+                    call(server, operator, PUBLISH_LETS_ENCRYPT_CERT, LETS_ENCRYPT_CERT).getCode(),
+                    "operator's PublishToStream entitlement must not admit it to letsencrypt's topic");
+        } finally {
+            shutdown(server);
+        }
     }
 
     // ---- NEGATIVE CONTROL: the check is what does the rejecting ----
