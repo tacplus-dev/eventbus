@@ -123,6 +123,15 @@ the looper then marks it `promoted` or `declined` here with the date.
   no OSV advisories. trivy finds no HIGH or CRITICAL in the 126 runtime jars of server. `dependency:resolve-plugins`
   (overrides not applied) leaves only #32's clean/deploy and #34's site realm. The gates passed on ebe81b0
   (pipeline 3092282353; main is 070c950, PROPOSALS.md only since). tacplus 2.6 is still the latest line (v2.6.13).
+  2026-11-25: the report is not main's again. It covers 13e4186, a land's build started 2026-11-24T18:44:17Z with
+  base c553cda, which is main. It has 0 findings and an empty `unfiled.json`, and the server tree is still "not
+  analyzed" (the sibling SNAPSHOT). By hand on main: `mvn dependency:tree` run from the reactor root (collection
+  only, so no `mvn install` is needed) resolves 136 packages across all scopes, and none has an OSV advisory. The
+  nightly gates fail on c553cda (pipeline 3111156258): `sameRpcNameOnTwoTopics_policiesStayApart:357`, which #37
+  already holds, so I filed nothing new. tacplus 2.6 is still the latest line (v2.6.14), and the relock is #36's.
+  `looper-trace` read none of the 42 Java files. By hand: Publish carries `trace_id` into the Kafka record header
+  (`PublishHandler.java:309`, asserted by `PublishTraceIdTest`) and to `dispatchTrace`, whose missing test #28 holds.
+  The only kernel call (`discoverVotersFromState`) runs at startup and no request causes it.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
