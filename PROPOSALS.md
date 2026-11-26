@@ -132,6 +132,14 @@ the looper then marks it `promoted` or `declined` here with the date.
   `looper-trace` read none of the 42 Java files. By hand: Publish carries `trace_id` into the Kafka record header
   (`PublishHandler.java:309`, asserted by `PublishTraceIdTest`) and to `dispatchTrace`, whose missing test #28 holds.
   The only kernel call (`discoverVotersFromState`) runs at startup and no request causes it.
+  2026-11-26: there was no report for tonight's nightly of 68f7fd2 (pipeline 3114118688, job 18362961559). The
+  security job left no `security/` artifact, so its findings are still those of the 13e4186 land build (0 findings,
+  `unfiled.json` empty). No finding is in a CI tool either: this repository has no `ci/` tool script. By hand on
+  main: `mvn dependency:tree` from the reactor root resolves 148 packages, and none has an OSV advisory (`api.osv.dev`
+  querybatch). There is no `security-exceptions.yaml`. The nightly gates fail on 68f7fd2 at
+  `sameRpcNameOnTwoTopics_policiesStayApart:357`, which #37 holds. tacplus 2.6 is still the latest line (v2.6.14),
+  and the relock is #36's. v2.6.14 carries tacplus-dev/tacplus#720, #29's fix, so I commented on #29. server/ and
+  codegen/ have not changed since c553cda, so the trace reading holds: #28 is the one gap. I filed nothing new.
 - **Which Java line the base image follows** (2026-11-05, nightly scan): eventbus and stratum run on
   `gcr.io/distroless/java21-debian13` (#11, tacplus-dev/stratum#14 kept the JDK at 21 and moved only Debian). Kernel moved
   to `java25-debian13` under the same rule (tacplus-dev/kernel#17, "behind the latest line"). Which line the rule means,
