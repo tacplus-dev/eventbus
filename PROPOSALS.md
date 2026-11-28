@@ -4,6 +4,14 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **The launcher stage's alpine has fixable OpenSSL and zlib advisories** (2026-11-28, #31): #14's
+  `FROM alpine:3.24` stage, now pinned by digest (`sha256:f59abe65…`, alpine 3.24.4), carries libcrypto3/libssl3
+  3.5.9-r0 (CVE-2026-107496, -95691, -95692 MEDIUM; -88822, -88823 LOW; fixed in 3.5.9-r1) and zlib 1.3.2-r1
+  (CVE-2026-4738 MEDIUM, fixed in 1.4-r0). `security-baseline.json` records them so the nightly does not file
+  them as new. Nothing from that stage ships except the checksum-verified `/launcher`. Still, its `wget` runs
+  on that OpenSSL. When alpine publishes a 3.24 image with the fixes, move the digest and drop the 11 entries
+  from the baseline in the same commit. A `busybox` (`wget`, `sha256sum`) stage would also do the job, without
+  OpenSSL.
 - **The site plugin's Jetty exceptions expire 2026-12-04** (2026-11-20, #34): `security-exceptions.yaml` accepts
   the maven-site-plugin 3.22.0 realm's Jetty 9.4.58 advisories (GHSA-355h-qmc2-wpwf, GHSA-2fvj-hgj9-j2gr HIGH;
   GHSA-qh8g-58pp-2wxh, GHSA-7p3p-8qv8-m2vh MODERATE) for 14 days, Jody's decision on #34. Every site release,
