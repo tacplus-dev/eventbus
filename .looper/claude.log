@@ -1,0 +1,34 @@
+= init
+> Bash cd /var/lib/looper-cache/work/eventbus/issues/2; git status --short; /usr/local/bin/repo-looper --repo eventbus --issue-text 2 | tail -20; gh run list --repo tacplus-dev/eventbus --workflow release.yml --limit 10; gh api repos/tacplus-dev/eventbus/tags --jq '.[].name' | head; git show --stat bd54b66...
+< **Still open: the `0.1` line.** There is no `:0.1` yet, and fleet-seatrials pins it. I retried the dispatch just now and it is still refused: `HTTP 403: Resource not accessible by integration`. A member, please run: 1. `gh workflow run release.yml --repo tacplus-dev/eventbus -f version=v0.1.4 -f exi...
+= thinking_tokens
+= thinking_tokens
+= thinking_tokens
+> Bash cd /var/lib/looper-cache/work/eventbus/issues/2; /usr/local/bin/repo-looper --repo eventbus --issue 2 --wait-until 2026-11-30T00:00:00Z --path .github/workflows/release.yml "Nothing to do on the relock push bd54b66 (tacplus.lock 2.6.14 -> 2.6.16; release.yml builds each tag from its own tacplus.lock...
+< Exit code 2 [2026-11-28T10:14:40Z] FATAL unknown argument: Nothing to do on the relock push bd54b66 (tacplus.lock 2.6.14 -> 2.6.16; release.yml builds each tag from its own tacplus.lock, so no change). v0.2.0 verified (run 46119882852 green; :0.2.0/:0.2 linux/arm64 with labels; package public; relea...
+Argument order: put `--path` last.
+> Bash cd /var/lib/looper-cache/work/eventbus/issues/2; /usr/local/bin/repo-looper --repo eventbus --issue 2 --wait-until 2026-11-30T00:00:00Z "Nothing to do on the relock push bd54b66 (tacplus.lock 2.6.14 -> 2.6.16; release.yml builds each tag from its own tacplus.lock, so no change). v0.2.0 verified (run...
+< Author identity unknown  *** Please tell me who you are.  Run    git config --global user.email "you@example.com"   git config --global user.name "Your Name"  to set your account's default identity. Omit --global to set the identity only in this repository.  fatal: empty ident name (for <looper-2@lo...
+= thinking_tokens
+= thinking_tokens
+Nothing changed for this issue, so I recorded another wait until 2026-11-30T00:00:00Z and ended the run. Nothing was committed or landed.
+
+- **The push that woke this run** was bd54b66, a nightly relock that moved `tacplus.lock` from tacplus 2.6.14 to 2.6.16. `release.yml` builds each tag from that tag's own `tacplus.lock`, so the relock needs no change here.
+- **The `0.1` line still needs a member.** `release.yml` has run only once, for v0.2.0 (run 46119882852, green and already checked). No member has commented since the last ask, so neither of these has run:
+  - the `existing=true` run for v0.1.4 (or v0.1.5, if #39 is tagged first), which gives `:0.1`;
+  - the dry run for v0.1.9, which the acceptance asks for.
+- **What wakes the issue:** the wait ends on 2026-11-30, or sooner on a member's comment, a label change, a closing blocker, or a push to main that changes `.github/workflows/release.yml`. Pushes that only change `tacplus.lock` will no longer wake it.
+- **The checkpoint push may be incomplete.** The checkpoint command printed git errors (no commit name or email set for `looper-2`), and its "pushed" line names no commit. The working tree was clean and the wait is recorded, so nothing is lost. The looper's git identity on this VM may still need setting.
+
+Once both dispatch runs exist, the next run checks them and `:0.1` (arm64, public), posts the outcome comment and closes the issue. If they still haven't run by the 30th, it asks a member again.
+= success: Nothing changed for this issue, so I recorded another wait until 2026-11-30T00:00:00Z and ended the run. Nothing was committed or landed.
+
+- **The push that woke this run** was bd54b66, a nightly relock that moved `tacplus.lock` from tacplus 2.6.14 to 2.6.16. `release.yml` builds each tag from that tag's own `tacplus.lock`, so the relock needs no change here.
+- **The `0.1` line still needs a member.** `release.yml` has run only once, for v0.2.0 (run 46119882852, green and already checked). No member has commented since the last ask, so neither of these has run:
+  - the `existing=true` run for v0.1.4 (or v0.1.5, if #39 is tagged first), which gives `:0.1`;
+  - the dry run for v0.1.9, which the acceptance asks for.
+- **What wakes the issue:** the wait ends on 2026-11-30, or sooner on a member's comment, a label change, a closing blocker, or a push to main that changes `.github/workflows/release.yml`. Pushes that only change `tacplus.lock` will no longer wake it.
+- **The checkpoint push may be incomplete.** The checkpoint command printed git errors (no commit name or email set for `looper-2`), and its "pushed" line names no commit. The working tree was clean and the wait is recorded, so nothing is lost. The looper's git identity on this VM may still need setting.
+
+Once both dispatch runs exist, the next run checks them and `:0.1` (arm64, public), posts the outcome comment and closes the issue. If they still haven't run by the 30th, it asks a member again.
+= usage: {"claude-opus-5-5":{"inputTokens":8,"outputTokens":2104,"cacheReadInputTokens":141645,"cacheCreationInputTokens":32527,"webSearchRequests":0,"costUSD":0.33065700000000003,"contextWindow":1000000,"maxOutputTokens":128000,"thinkingTokens":298,"canonicalModel":"claude-opus-5-5","provider":"firstParty","costBasis":"list"}}
