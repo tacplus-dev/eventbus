@@ -27,3 +27,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-28 looper release v0.1.4 (https://github.com/tacplus-dev/eventbus/releases/tag/v0.1.4)
 - 2026-11-28 looper issue Root pom is behind fleet-dev's default-lifecycle pins, and clean and deploy are unset (commons-io 2.6, plexus-utils 4.0.1: HIGH); pin clean 3.5.0, resources 3.5.0, jar 3.5.1, install/deploy 3.2.0 (#32)
 - 2026-11-28 looper issue Take the launcher from a pinned tacplus-dev release, not SeaBeam's schematic image (#14)
+- 2026-11-28 looper issue Trace propagation: no test that a Publish's trace_id reaches the WatchTrace stream (dispatchTrace → WatchTraceHandler.dispatch) (#28)
