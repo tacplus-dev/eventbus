@@ -4,6 +4,13 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **Embedded Kafka brokers in tests on free ports, not fixed ones** (2026-11-28, #29): each broker test binds
+  fixed ports (`TopicManagerListTopicsTest` 39792/39793 and LOCAL 49792, `AdminErrorMappingTest` 39892/39893, …),
+  all inside Linux's ephemeral range (32768-60999), and `SubscribeTenantFilterTest` and
+  `FleetRecordNamespaceStampTest` share 39692/39693. #29's first local build (6e7a749) failed only at
+  `TopicManagerListTopicsTest.startBroker:62` with `BindException: Address already in use` on a looper VM
+  that runs other builds at the same time. Picking each port from a bound `ServerSocket(0)` (or letting
+  `KafkaEmbeddedBroker` choose and report its ports) would take this flake out of the gates.
 - **Generate from a pinned fleet, not the registry's HEAD** (2026-11-22, nightly scan, #37): `tacplus.yaml`'s
   `states: all` (and `depends: kernel`) resolves every service's protos through tacplus-dev/registry when a build
   runs. tacplus.lock pins the compiler but not those inputs. On 2026-11-20 kernel#69 added `TenantRegistryEntry`,
