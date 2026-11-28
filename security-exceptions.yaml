@@ -1,6 +1,17 @@
 # The advisories this repository accepts (looper-scan's policy): each entry an
 # id, where (a path glob), reason, decided_by and expires (YYYY-MM-DD).
 exceptions:
+  # DS-0026 (trivy, LOW), "No HEALTHCHECK defined" in the release Dockerfile
+  # (#31): the image is distroless (no shell, no curl) and runs under
+  # Kubernetes, whose liveness and readiness probes hit the plaintext health
+  # port 8444 themselves; Kubernetes ignores a Dockerfile HEALTHCHECK. The base
+  # image's unfixed advisories are not accepted here: security-baseline.json
+  # records them against the pinned digest.
+  - id: DS-0026
+    where: Dockerfile
+    reason: "The release image is distroless (no shell or curl to run a HEALTHCHECK) and is health-checked by Kubernetes liveness/readiness probes on the plaintext health port 8444, not by a Dockerfile HEALTHCHECK (#31)"
+    decided_by: jodydadescott
+    expires: 2027-05-17
   # The maven-site-plugin realm (#34): maven-site-plugin 3.22.0, pinned in the
   # root <pluginManagement>, depends on Jetty 9.4.58.v20250814, the newest 9.4
   # on Maven Central (EOL); every site release, 4.0.0-M16 too, is on Jetty 9.4.
