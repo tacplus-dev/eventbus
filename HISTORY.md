@@ -29,3 +29,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-28 looper issue Take the launcher from a pinned tacplus-dev release, not SeaBeam's schematic image (#14)
 - 2026-11-28 looper issue Trace propagation: no test that a Publish's trace_id reaches the WatchTrace stream (dispatchTrace → WatchTraceHandler.dispatch) (#28)
 - 2026-11-28 looper issue maven-site-plugin is unpinned: Maven's default 3.12.1 realm loads dom4j 1.1 (CRITICAL) and 17 HIGH (velocity 1.7, commons-compress 1.20, Jetty 9.4.46, …); pin 3.22.0 with beanutils/jsoup overrides (Jetty 9.4 has no public fix) (#34)
+- 2026-11-28 looper release v0.2.0 (https://github.com/tacplus-dev/eventbus/releases/tag/v0.2.0)
