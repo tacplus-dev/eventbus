@@ -4,6 +4,14 @@ Written by loopers. Each proposal: what, why, links. Jody promotes accepted ones
 the looper then marks it `promoted` or `declined` here with the date.
 
 ## Open
+- **llmproxy's and deploymentproxy's release-tags.sh hold a line back once its minor reaches 10** (2026-11-13, #2):
+  they take the line's highest patch from `git tag -l "v$line.*"`, a glob that also matches `v0.10.x` for line
+  `0.1`, and `sort -t. -k3,3n` then picks `v0.10.x`'s patch, so `0.1` never moves again. eventbus's
+  `tools/release-tags.sh` matches only `v<line>.<n>` (tested in `tools/release_test.sh`). A bug for those
+  repositories, harmless until a `0.10` exists.
+- **A container smoke check in release.yml** (2026-11-13, #2): the release builds and pushes the image but does
+  not start it. The health probe on 8444 would answer NOT_SERVING with no kernel; see the smoke-check entry
+  below (#11).
 - **The site plugin's Jetty exceptions expire 2026-12-04** (2026-11-20, #34): `security-exceptions.yaml` accepts
   the maven-site-plugin 3.22.0 realm's Jetty 9.4.58 advisories (GHSA-355h-qmc2-wpwf, GHSA-2fvj-hgj9-j2gr HIGH;
   GHSA-qh8g-58pp-2wxh, GHSA-7p3p-8qv8-m2vh MODERATE) for 14 days, Jody's decision on #34. Every site release,

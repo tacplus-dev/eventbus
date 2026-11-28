@@ -35,12 +35,17 @@ build: generate
 test: build
   mvn -B test
 
+# The release rules (tools/release-tags.sh, tools/release-notes.sh) on fixture
+# repositories.
+release-test:
+  tools/release_test.sh
+
 # Every plugin `mvn site` runs is pinned in the root <pluginManagement> (#34).
 check-site-plugins:
   tools/check-site-plugins.sh
 
 # The gates every change passes before it is pushed.
-gates: check-generated test check-site-plugins
+gates: check-generated test check-site-plugins release-test
 
 clean:
   rm -rf model/target codegen/target server/target target
