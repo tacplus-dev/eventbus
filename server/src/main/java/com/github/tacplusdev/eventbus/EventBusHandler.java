@@ -396,12 +396,17 @@ public class EventBusHandler implements Handler {
 	 * trace_ids on non-trace topics.
 	 */
 	private void dispatchTrace(String traceId) {
+		dispatchTrace(watchTraceHandler, sm.getInstanceId(), traceId);
+	}
+
+	/** {@link #dispatchTrace(String)} on a given handler and instance id; package-private for tests. */
+	static void dispatchTrace(WatchTraceHandler watchTraceHandler, String instanceId, String traceId) {
 		watchTraceHandler.dispatch(Trace.TraceEvent.newBuilder()
 			.setTraceId(traceId)
 			.setKind(Trace.TraceEventKind.TRACE_EVENT_KIND_INTERNAL_REQUEST)
 			.setRound(Trace.TraceRound.newBuilder()
 				.setService(SERVICE_NAME)
-				.setInstanceId(sm.getInstanceId())
+				.setInstanceId(instanceId)
 				.setTimestampMs(System.currentTimeMillis())
 				.build())
 			.build());
