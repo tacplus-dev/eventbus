@@ -24,3 +24,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-28 looper release v0.1.3 (https://github.com/tacplus-dev/eventbus/releases/tag/v0.1.3)
 - 2026-11-28 looper issue Security job red on every full-gates build: generated CollectionRuntime synchronizes on Ring.this (SpotBugs USO_UNSAFE_OBJECT_SYNCHRONIZATION, tacplus#712): move tacplus.lock to the patch that fixes it (#29)
 - 2026-11-28 looper issue Pinned images behind their lines: relock (tacplus.lock: tacplus 2.6.1 → 2.6.13, and 1 more) (#36)
+- 2026-11-28 looper release v0.1.4 (https://github.com/tacplus-dev/eventbus/releases/tag/v0.1.4)
