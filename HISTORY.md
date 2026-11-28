@@ -22,3 +22,4 @@ Append-only: add entries at the end, never edit or remove one (CI enforces it). 
 - 2026-11-08 looper issue tacplus floor 2.5 is behind the latest released line (2.6) (#27)
 - 2026-11-09 looper issue maven-plugin-plugin 3.15.1 loads guava 33.2.1 and jsoup 1.18.1 (HIGH), os-maven-plugin 1.7.1 loads commons-lang3 3.5: override them in pluginManagement (#26)
 - 2026-11-28 looper release v0.1.3 (https://github.com/tacplus-dev/eventbus/releases/tag/v0.1.3)
+- 2026-11-28 looper issue Security job red on every full-gates build: generated CollectionRuntime synchronizes on Ring.this (SpotBugs USO_UNSAFE_OBJECT_SYNCHRONIZATION, tacplus#712): move tacplus.lock to the patch that fixes it (#29)
